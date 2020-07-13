@@ -110,6 +110,7 @@ enum class jsonpath_errc
     invalid_arity,
     identifier_not_found,
     expected_index_expression,
+    expected_pipe,
     unknown_error 
 };
 
@@ -177,6 +178,8 @@ public:
                 return "Identifier not found";
             case jsonpath_errc::expected_index_expression:
                 return "Expected index expression";
+            case jsonpath_errc::expected_pipe:
+                return "Expected '|'";
             case jsonpath_errc::unknown_error:
             default:
                 return "Unknown jsonpath parser error";

@@ -33,7 +33,6 @@ namespace jsonpath {
         end_multi_select_list,
         begin_filter,
         end_filter,
-        pipe,
         separator,
         key,
         literal,
@@ -120,12 +119,6 @@ namespace jsonpath {
         explicit end_filter_arg_t() = default;
     };
     constexpr end_filter_arg_t end_filter_arg{};
-
-    struct pipe_arg_t
-    {
-        explicit pipe_arg_t() = default;
-    };
-    constexpr pipe_arg_t pipe_arg{};
 
     struct current_node_arg_t
     {
@@ -257,10 +250,12 @@ namespace jsonpath {
         function_expression,
         argument,
         expression_or_expression_type,
-        quoted_string,
+        double_quoted_string,
+        single_quoted_string,
         raw_string,
         raw_string_escape_char,
-        quoted_string_escape_char,
+        double_quoted_string_escape_char,
+        single_quoted_string_escape_char,
         escape_u1, 
         escape_u2, 
         escape_u3, 
@@ -301,7 +296,7 @@ namespace jsonpath {
         cmp_eq_old,
         cmp_gt_or_gte_old,
         cmp_ne_old,
-        expect_pipe_or_or,
+        expect_or,
         expect_and
     };
 
@@ -1895,11 +1890,6 @@ namespace jsonpath {
             {
             }
 
-            token(pipe_arg_t)
-                : type_(token_type::pipe)
-            {
-            }
-
             token(key_arg_t, const string_type& key)
                 : type_(token_type::key)
             {
@@ -2156,9 +2146,6 @@ namespace jsonpath {
                     case token_type::begin_filter:
                         return std::string("begin_filter");
                         break;
-                    case token_type::pipe:
-                        return std::string("pipe");
-                        break;
                     case token_type::lparen:
                         return std::string("lparen");
                         break;
@@ -2203,12 +2190,6 @@ namespace jsonpath {
                         JSONCONS_ASSERT(!stack.empty());
                         stack.pop_back();
                         stack.push_back(parameter(output_stack[i].expression_.get()));
-                        break;
-                    }
-                    case token_type::pipe:
-                    {
-                        JSONCONS_ASSERT(!stack.empty());
-                        root_ptr = stack.back().value_;
                         break;
                     }
                     case token_type::root_node:
@@ -3365,7 +3346,7 @@ namespace jsonpath {
                                 ++p_;
                                 ++column_;
                                 state_stack_.emplace_back(path_state::lhs_expression);
-                                state_stack_.emplace_back(path_state::expect_pipe_or_or);
+                                state_stack_.emplace_back(path_state::expect_or);
                                 break;
                             case '&':
                                 ++p_;
@@ -3472,12 +3453,13 @@ namespace jsonpath {
                                 break;
                             case '\"':
                                 state_stack_.back() = path_state::val_expr;
-                                state_stack_.emplace_back(path_state::quoted_string);
+                                state_stack_.emplace_back(path_state::double_quoted_string);
                                 ++p_;
                                 ++column_;
                                 break;
                             case '\'':
-                                state_stack_.back() = path_state::raw_string;
+                                state_stack_.back() = path_state::val_expr;
+                                state_stack_.emplace_back(path_state::single_quoted_string);
                                 ++p_;
                                 ++column_;
                                 break;
@@ -3556,7 +3538,13 @@ namespace jsonpath {
                                 break;
                             case '\"':
                                 state_stack_.back() = path_state::val_expr;
-                                state_stack_.emplace_back(path_state::quoted_string);
+                                state_stack_.emplace_back(path_state::double_quoted_string);
+                                ++p_;
+                                ++column_;
+                                break;
+                            case '\'':
+                                state_stack_.back() = path_state::val_expr;
+                                state_stack_.emplace_back(path_state::single_quoted_string);
                                 ++p_;
                                 ++column_;
                                 break;
@@ -3615,6 +3603,7 @@ namespace jsonpath {
                         switch (*p_)
                         {
                             case '\"':
+                            case '\'':
                                 ++p_;
                                 ++column_;
                                 push_token(token(jsoncons::make_unique<identifier_selector>(buffer)));
@@ -3716,14 +3705,33 @@ namespace jsonpath {
                         state_stack_.pop_back();
                         break;
 
-                    case path_state::quoted_string: 
+                    case path_state::double_quoted_string: 
                         switch (*p_)
                         {
                             case '\"':
-                                state_stack_.pop_back(); // quoted_string
+                                state_stack_.pop_back(); // double_quoted_string
                                 break;
                             case '\\':
-                                state_stack_.emplace_back(path_state::quoted_string_escape_char);
+                                state_stack_.emplace_back(path_state::double_quoted_string_escape_char);
+                                ++p_;
+                                ++column_;
+                                break;
+                            default:
+                                buffer.push_back(*p_);
+                                ++p_;
+                                ++column_;
+                                break;
+                        };
+                        break;
+
+                    case path_state::single_quoted_string: 
+                        switch (*p_)
+                        {
+                            case '\'':
+                                state_stack_.pop_back(); 
+                                break;
+                            case '\\':
+                                state_stack_.emplace_back(path_state::single_quoted_string_escape_char);
                                 ++p_;
                                 ++column_;
                                 break;
@@ -3774,11 +3782,72 @@ namespace jsonpath {
                                 break;
                         }
                         break;
-                    case path_state::quoted_string_escape_char:
+                    case path_state::double_quoted_string_escape_char:
                         switch (*p_)
                         {
                             case '\"':
                                 buffer.push_back('\"');
+                                ++p_;
+                                ++column_;
+                                state_stack_.pop_back();
+                                break;
+                            case '\\': 
+                                buffer.push_back('\\');
+                                ++p_;
+                                ++column_;
+                                state_stack_.pop_back();
+                                break;
+                            case '/':
+                                buffer.push_back('/');
+                                ++p_;
+                                ++column_;
+                                state_stack_.pop_back();
+                                break;
+                            case 'b':
+                                buffer.push_back('\b');
+                                ++p_;
+                                ++column_;
+                                state_stack_.pop_back();
+                                break;
+                            case 'f':
+                                buffer.push_back('\f');
+                                ++p_;
+                                ++column_;
+                                state_stack_.pop_back();
+                                break;
+                            case 'n':
+                                buffer.push_back('\n');
+                                ++p_;
+                                ++column_;
+                                state_stack_.pop_back();
+                                break;
+                            case 'r':
+                                buffer.push_back('\r');
+                                ++p_;
+                                ++column_;
+                                state_stack_.pop_back();
+                                break;
+                            case 't':
+                                buffer.push_back('\t');
+                                ++p_;
+                                ++column_;
+                                state_stack_.pop_back();
+                                break;
+                            case 'u':
+                                ++p_;
+                                ++column_;
+                                state_stack_.back() = path_state::escape_u1;
+                                break;
+                            default:
+                                ec = jsonpath_errc::illegal_escaped_character;
+                                return jsonpath_expression();
+                        }
+                        break;
+                    case path_state::single_quoted_string_escape_char:
+                        switch (*p_)
+                        {
+                            case '\'':
+                                buffer.push_back('\'');
                                 ++p_;
                                 ++column_;
                                 state_stack_.pop_back();
@@ -4310,7 +4379,7 @@ namespace jsonpath {
                             case '\"':
                                 state_stack_.back() = path_state::expect_colon;
                                 state_stack_.emplace_back(path_state::key_expr);
-                                state_stack_.emplace_back(path_state::quoted_string);
+                                state_stack_.emplace_back(path_state::double_quoted_string);
                                 ++p_;
                                 ++column_;
                                 break;
@@ -4495,7 +4564,7 @@ namespace jsonpath {
                         }
                         break;
                     }
-                    case path_state::expect_pipe_or_or:
+                    case path_state::expect_or:
                     {
                         switch(*p_)
                         {
@@ -4507,9 +4576,8 @@ namespace jsonpath {
                                 ++column_;
                                 break;
                             default:
-                                push_token(token(pipe_arg));
-                                state_stack_.pop_back(); 
-                                break;
+                                ec = jsonpath_errc::expected_pipe;
+                                return jsonpath_expression();
                         }
                         break;
                     }
@@ -4577,7 +4645,7 @@ namespace jsonpath {
                                 ++p_;
                                 ++column_;
                                 state_stack_.emplace_back(path_state::lhs_expression);
-                                state_stack_.emplace_back(path_state::expect_pipe_or_or);
+                                state_stack_.emplace_back(path_state::expect_or);
                                 break;
                             }
                             case ']':
@@ -4981,7 +5049,6 @@ namespace jsonpath {
                     output_stack_.emplace_back(std::move(tok));
                     break;
                 case token_type::key:
-                case token_type::pipe:
                 case token_type::argument:
                 case token_type::begin_expression_type:
                     output_stack_.emplace_back(std::move(tok));

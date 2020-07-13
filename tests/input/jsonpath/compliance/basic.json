@@ -22,7 +22,7 @@
                 "result" : ["more"]
             }
         ]
-    }/*,
+    },
     {
         "given" : {
            "key": "value",
@@ -40,5 +40,5 @@
                 "result" : ["value"]
             }
         ]
-    }*/
+    }
 ]
