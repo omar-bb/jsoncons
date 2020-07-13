@@ -8,7 +8,7 @@
                 "result" : ["value"]
             }
         ]
-    },
+    }/*,
     {
         "given" : {
              "one": {"key": "value"},
@@ -40,5 +40,5 @@
                 "result" : ["value"]
             }
         ]
-    }
+    }*/
 ]
