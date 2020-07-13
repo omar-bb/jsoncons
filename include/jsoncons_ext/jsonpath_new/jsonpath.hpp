@@ -2545,6 +2545,17 @@ namespace jsonpath {
                 {
                     result_ptr->push_back(val.at(identifier_));
                 }
+                else if (val.is_array())
+                {
+                    for (auto& item : val.array_range())
+                    {
+                        if (item.is_object() && item.contains(identifier_))
+                        {
+                            result_ptr->push_back(item.at(identifier_));
+                        }
+                    }
+                }
+
                 return *result_ptr;
             }
 
