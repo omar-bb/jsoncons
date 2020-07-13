@@ -40,5 +40,35 @@
                 "result" : ["value"]
             }
         ]
+    },
+    {
+        "given" : ["one element"],
+        "cases" : [
+            {
+                "comment" : "Bracket notation with negative number on short array",
+                "expression" : "$[-2]",
+                "result" : []
+            }
+        ]
+    },
+    {
+        "given" : ["first", "second", "third", "forth", "fifth"],
+        "cases" : [
+            {
+                "comment" : "Bracket notation with number",
+                "expression" : "$[2]",
+                "result" : ["third"]
+            }
+        ]
+    },
+    {
+        "given" : {"0": "value"},
+        "cases" : [
+            {
+                "comment" : "Bracket notation with number on object",
+                "expression" : "$[0]",
+                "result" : []
+            }
+        ]
     }
 ]

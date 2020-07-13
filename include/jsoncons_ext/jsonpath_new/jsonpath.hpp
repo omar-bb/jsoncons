@@ -364,20 +364,26 @@ namespace jsonpath {
 
             reference true_value() const
             {
-                static const Json true_value(true, semantic_tag::none);
-                return true_value;
+                static const Json value(true, semantic_tag::none);
+                return value;
             }
 
             reference false_value() const
             {
-                static const Json false_value(false, semantic_tag::none);
-                return false_value;
+                static const Json value(false, semantic_tag::none);
+                return value;
             }
 
             reference null_value() const
             {
-                static const Json null_value(null_type(), semantic_tag::none);
-                return null_value;
+                static const Json value(null_type(), semantic_tag::none);
+                return value;
+            }
+
+            reference empty_array_value() const
+            {
+                static const Json value(json_array_arg, semantic_tag::none);
+                return value;
             }
 
             template <typename... Args>
@@ -2614,23 +2620,24 @@ namespace jsonpath {
             {
                 if (!val.is_array())
                 {
-                    return context.null_value();
+                    return context.empty_array_value();
                 }
+
+                auto result_ptr = context.create_json(json_array_arg);
+
                 int64_t slen = static_cast<int64_t>(val.size());
                 if (index_ >= 0 && index_ < slen)
                 {
                     std::size_t index = static_cast<std::size_t>(index_);
-                    return val.at(index);
+                    result_ptr->push_back(val.at(index));
                 }
                 else if ((slen + index_) >= 0 && (slen+index_) < slen)
                 {
                     std::size_t index = static_cast<std::size_t>(slen + index_);
-                    return val.at(index);
+                    result_ptr->push_back(val.at(index));
                 }
-                else
-                {
-                    return context.null_value();
-                }
+
+                return *result_ptr;
             }
 
             std::string to_string(std::size_t indent = 0) const override
@@ -4938,13 +4945,13 @@ namespace jsonpath {
                     }
                     break;
                 case token_type::expression:
-                    if (!output_stack_.empty() && output_stack_.back().is_projection() && 
+                    /*if (!output_stack_.empty() && output_stack_.back().is_projection() && 
                         (tok.precedence_level() < output_stack_.back().precedence_level() ||
                         (tok.precedence_level() == output_stack_.back().precedence_level() && tok.is_right_associative())))
                     {
                         output_stack_.back().expression_->add_expression(std::move(tok.expression_));
                     }
-                    else
+                    else*/
                     {
                         output_stack_.emplace_back(std::move(tok));
                     }
