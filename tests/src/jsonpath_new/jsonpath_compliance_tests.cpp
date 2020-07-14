@@ -99,7 +99,8 @@ TEST_CASE("jsonpath-tests")
     SECTION("compliance")
     {
         //jsonpath_tests("./input/jsonpath/compliance/basic.json"); 
-        jsonpath_tests("./input/jsonpath/compliance/slice.json");
+        //jsonpath_tests("./input/jsonpath/compliance/slice.json");
+        jsonpath_tests("./input/jsonpath/compliance/recursive-descent.json");
     }
 }
 

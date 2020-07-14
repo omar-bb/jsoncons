@@ -27,6 +27,7 @@ namespace jsonpath {
     {
         root_node,
         current_node,
+        recursive_descent,
         lparen,
         rparen,
         begin_multi_select_list,
@@ -125,6 +126,12 @@ namespace jsonpath {
         explicit current_node_arg_t() = default;
     };
     constexpr current_node_arg_t current_node_arg{};
+
+    struct recursive_descent_arg_t
+    {
+        explicit recursive_descent_arg_t() = default;
+    };
+    constexpr recursive_descent_arg_t recursive_descent_arg{};
 
     struct root_node_arg_t
     {
@@ -244,6 +251,7 @@ namespace jsonpath {
         start,
         lhs_expression,
         rhs_expression,
+        expect_dot_expression_or_recursive_descent,
         sub_expression,
         expression_type,
         comparator_expression,
@@ -511,7 +519,7 @@ namespace jsonpath {
 
             virtual ~expression_base() = default;
 
-            virtual reference evaluate(reference val, eval_context& context, std::error_code& ec) const = 0;
+            virtual reference evaluate(reference val, bool recursive_descent, eval_context& context, std::error_code& ec) const = 0;
 
             virtual void add_expression(std::unique_ptr<expression_base>&& expressions) = 0;
 
@@ -1060,7 +1068,7 @@ namespace jsonpath {
                 auto& expr = args[1].expression_;
 
                 std::error_code ec2;
-                Json key1 = expr->evaluate(ptr->at(0), context, ec2); 
+                Json key1 = expr->evaluate(ptr->at(0), false, context, ec2); 
 
                 bool is_number = key1.is_number();
                 bool is_string = key1.is_string();
@@ -1073,7 +1081,7 @@ namespace jsonpath {
                 std::size_t index = 0;
                 for (std::size_t i = 1; i < ptr->size(); ++i)
                 {
-                    auto key2 = expr->evaluate(ptr->at(i), context, ec2); 
+                    auto key2 = expr->evaluate(ptr->at(i), false, context, ec2); 
                     if (!(key2.is_number() == is_number && key2.is_string() == is_string))
                     {
                         ec = jsonpath_errc::invalid_type;
@@ -1120,7 +1128,7 @@ namespace jsonpath {
 
                 for (auto& item : ptr->array_range())
                 {
-                    auto& j = expr->evaluate(item, context, ec);
+                    auto& j = expr->evaluate(item, false, context, ec);
                     if (ec)
                     {
                         ec = jsonpath_errc::invalid_type;
@@ -1225,7 +1233,7 @@ namespace jsonpath {
                 auto& expr = args[1].expression_;
 
                 std::error_code ec2;
-                Json key1 = expr->evaluate(ptr->at(0), context, ec2); 
+                Json key1 = expr->evaluate(ptr->at(0), false, context, ec2); 
 
                 bool is_number = key1.is_number();
                 bool is_string = key1.is_string();
@@ -1238,7 +1246,7 @@ namespace jsonpath {
                 std::size_t index = 0;
                 for (std::size_t i = 1; i < ptr->size(); ++i)
                 {
-                    auto key2 = expr->evaluate(ptr->at(i), context, ec2); 
+                    auto key2 = expr->evaluate(ptr->at(i), false, context, ec2); 
                     if (!(key2.is_number() == is_number && key2.is_string() == is_string))
                     {
                         ec = jsonpath_errc::invalid_type;
@@ -1440,7 +1448,7 @@ namespace jsonpath {
                     [&expr,&context,&ec](reference lhs, reference rhs) -> bool
                 {
                     std::error_code ec2;
-                    reference key1 = expr->evaluate(lhs, context, ec2);
+                    reference key1 = expr->evaluate(lhs, false, context, ec2);
                     bool is_number = key1.is_number();
                     bool is_string = key1.is_string();
                     if (!(is_number || is_string))
@@ -1448,7 +1456,7 @@ namespace jsonpath {
                         ec = jsonpath_errc::invalid_type;
                     }
 
-                    reference key2 = expr->evaluate(rhs, context, ec2);
+                    reference key2 = expr->evaluate(rhs, false, context, ec2);
                     if (!(key2.is_number() == is_number && key2.is_string() == is_string))
                     {
                         ec = jsonpath_errc::invalid_type;
@@ -1846,6 +1854,11 @@ namespace jsonpath {
             {
             }
 
+            token(recursive_descent_arg_t)
+                : type_(token_type::recursive_descent)
+            {
+            }
+
             token(begin_function_arg_t)
                 : type_(token_type::begin_function)
             {
@@ -2131,6 +2144,9 @@ namespace jsonpath {
                     case token_type::current_node:
                         return std::string("current_node");
                         break;
+                    case token_type::recursive_descent:
+                        return std::string("recursive_descent");
+                        break;
                     case token_type::begin_function:
                         return std::string("begin_function");
                         break;
@@ -2178,6 +2194,8 @@ namespace jsonpath {
             pointer root_ptr = std::addressof(doc);
             std::vector<parameter> stack;
             std::vector<parameter> arg_stack;
+            bool recursive_descent = false;
+
             for (std::size_t i = 0; i < output_stack.size(); ++i)
             {
                 auto& t = output_stack[i];
@@ -2202,12 +2220,15 @@ namespace jsonpath {
                     case token_type::current_node:
                         stack.push_back(root_ptr);
                         break;
+                    case token_type::recursive_descent:
+                        recursive_descent = true;
+                        break;
                     case token_type::expression:
                     {
                         JSONCONS_ASSERT(!stack.empty());
                         auto ptr = stack.back().value_;
                         stack.pop_back();
-                        auto& ref = t.expression_->evaluate(*ptr, context, ec);
+                        auto& ref = t.expression_->evaluate(*ptr, recursive_descent, context, ec);
                         stack.push_back(std::addressof(ref));
                         break;
                     }
@@ -2523,27 +2544,70 @@ namespace jsonpath {
             {
             }
 
-            reference evaluate(reference val, eval_context& context, std::error_code&) const override
+            reference evaluate(reference val, bool recursive_descent, eval_context& context, std::error_code&) const override
             {
                 //std::cout << "(identifier_selector " << identifier_  << " ) " << pretty_print(val) << "\n";
 
                 auto result_ptr = context.create_json(json_array_arg);
-                if (val.is_object() && val.contains(identifier_))
+                if (val.is_object())
                 {
-                    result_ptr->push_back(val.at(identifier_));
+                    if (val.contains(identifier_))
+                    {
+                        result_ptr->push_back(val.at(identifier_));
+                    }
+                    if (recursive_descent)
+                    {
+                        recurse(val, result_ptr);
+                    }
                 }
                 else if (val.is_array())
                 {
                     for (auto& item : val.array_range())
                     {
-                        if (item.is_object() && item.contains(identifier_))
+                        if (item.is_object())
                         {
-                            result_ptr->push_back(item.at(identifier_));
+                            if (item.contains(identifier_))
+                            {
+                                result_ptr->push_back(item.at(identifier_));
+                            }
+                            if (recursive_descent)
+                            {
+                                recurse(item, result_ptr);
+                            }
                         }
                     }
                 }
 
                 return *result_ptr;
+            }
+
+            void recurse(reference val, Json* result) const
+            {
+                for (auto& item : val.object_range())
+                {
+                    if (item.value().is_object())
+                    {
+                        if (item.value().contains(identifier_))
+                        {
+                            result->push_back(item.value().at(identifier_));
+                        }
+                        recurse(item.value(), result);
+                    }
+                    else if (item.value().is_array())
+                    {
+                        for (auto& j : item.value().array_range())
+                        {
+                            if (j.is_object())
+                            {
+                                if (j.contains(identifier_))
+                                {
+                                    result->push_back(j.at(identifier_));
+                                }
+                                recurse(j, result);
+                            }
+                        }
+                    }
+                }
             }
 
             std::string to_string(std::size_t indent = 0) const override
@@ -2566,7 +2630,7 @@ namespace jsonpath {
             {
             }
 
-            reference evaluate(reference val, eval_context&, std::error_code&) const override
+            reference evaluate(reference val, bool /*recursive_descent*/, eval_context&, std::error_code&) const override
             {
                 return val;
             }
@@ -2590,7 +2654,7 @@ namespace jsonpath {
             {
             }
 
-            reference evaluate(reference val, eval_context&, std::error_code&) const override
+            reference evaluate(reference val, bool /*recursive_descent*/, eval_context&, std::error_code&) const override
             {
                 return val;
             }
@@ -2616,7 +2680,7 @@ namespace jsonpath {
             {
             }
 
-            reference evaluate(reference val, eval_context& context, std::error_code&) const override
+            reference evaluate(reference val, bool /*recursive_descent*/, eval_context& context, std::error_code&) const override
             {
                 if (!val.is_array())
                 {
@@ -2678,12 +2742,12 @@ namespace jsonpath {
                 }
             }
 
-            reference apply_expressions(reference val, eval_context& context, std::error_code& ec) const
+            reference apply_expressions(reference val, bool recursive_descent, eval_context& context, std::error_code& ec) const
             {
                 pointer ptr = std::addressof(val);
                 for (auto& expression : expressions_)
                 {
-                    ptr = std::addressof(expression->evaluate(*ptr, context, ec));
+                    ptr = std::addressof(expression->evaluate(*ptr, recursive_descent, context, ec));
                 }
                 return *ptr;
             }
@@ -2697,7 +2761,7 @@ namespace jsonpath {
             {
             }
 
-            reference evaluate(reference val, eval_context& context, std::error_code& ec) const override
+            reference evaluate(reference val, bool recursive_descent, eval_context& context, std::error_code& ec) const override
             {
                 if (!val.is_object())
                 {
@@ -2709,7 +2773,7 @@ namespace jsonpath {
                 {
                     if (!item.value().is_null())
                     {
-                        auto j = this->apply_expressions(item.value(), context, ec);
+                        auto j = this->apply_expressions(item.value(), recursive_descent, context, ec);
                         if (!j.is_null())
                         {
                             result->push_back(j);
@@ -2745,7 +2809,7 @@ namespace jsonpath {
             {
             }
 
-            reference evaluate(reference val, eval_context& context, std::error_code& ec) const override
+            reference evaluate(reference val, bool recursive_descent, eval_context& context, std::error_code& ec) const override
             {
                 if (!val.is_array())
                 {
@@ -2757,7 +2821,7 @@ namespace jsonpath {
                 {
                     if (!item.is_null())
                     {
-                        auto j = this->apply_expressions(item, context, ec);
+                        auto j = this->apply_expressions(item, recursive_descent, context, ec);
                         if (!j.is_null())
                         {
                             result->push_back(j);
@@ -2794,7 +2858,7 @@ namespace jsonpath {
             {
             }
 
-            reference evaluate(reference val, eval_context& context, std::error_code& ec) const override
+            reference evaluate(reference val, bool recursive_descent, eval_context& context, std::error_code& ec) const override
             {
                 if (!val.is_array())
                 {
@@ -2824,7 +2888,7 @@ namespace jsonpath {
                     }
                     for (int64_t i = start; i < end; i += step)
                     {
-                        auto j = this->apply_expressions(val.at(static_cast<std::size_t>(i)), context, ec);
+                        auto j = this->apply_expressions(val.at(static_cast<std::size_t>(i)), recursive_descent, context, ec);
                         if (!j.is_null())
                         {
                             result->push_back(j);
@@ -2843,7 +2907,7 @@ namespace jsonpath {
                     }
                     for (int64_t i = start; i > end; i += step)
                     {
-                        auto j = this->apply_expressions(val.at(static_cast<std::size_t>(i)), context, ec);
+                        auto j = this->apply_expressions(val.at(static_cast<std::size_t>(i)), recursive_descent, context, ec);
                         if (!j.is_null())
                         {
                             result->push_back(j);
@@ -2881,7 +2945,7 @@ namespace jsonpath {
             {
             }
 
-            reference evaluate(reference val, eval_context& context, std::error_code& ec) const override
+            reference evaluate(reference val, bool recursive_descent, eval_context& context, std::error_code& ec) const override
             {
                 if (!val.is_array())
                 {
@@ -2894,7 +2958,7 @@ namespace jsonpath {
                     reference j = evaluate_tokens(item, token_list_, context, ec);
                     if (is_true(j))
                     {
-                        auto jj = this->apply_expressions(item, context, ec);
+                        auto jj = this->apply_expressions(item, recursive_descent, context, ec);
                         if (!jj.is_null())
                         {
                             result->push_back(jj);
@@ -2930,7 +2994,7 @@ namespace jsonpath {
             {
             }
 
-            reference evaluate(reference val, eval_context& context, std::error_code& ec) const override
+            reference evaluate(reference val, bool recursive_descent, eval_context& context, std::error_code& ec) const override
             {
                 if (!val.is_array())
                 {
@@ -2957,7 +3021,7 @@ namespace jsonpath {
                 {
                     if (!item.is_null())
                     {
-                        auto j = this->apply_expressions(item, context, ec);
+                        auto j = this->apply_expressions(item, recursive_descent, context, ec);
                         if (!j.is_null())
                         {
                             result->push_back(j);
@@ -2994,7 +3058,7 @@ namespace jsonpath {
             {
             }
 
-            reference evaluate(reference val, eval_context& context, std::error_code& ec) const override
+            reference evaluate(reference val, bool /*recursive_descent*/, eval_context& context, std::error_code& ec) const override
             {
                 if (val.is_null())
                 {
@@ -3053,7 +3117,7 @@ namespace jsonpath {
             {
             }
 
-            reference evaluate(reference val, eval_context& context, std::error_code& ec) const override
+            reference evaluate(reference val, bool /*recursive_descent*/, eval_context& context, std::error_code& ec) const override
             {
                 return evaluate_tokens(val, toks_, context, ec);
             }
@@ -3348,6 +3412,7 @@ namespace jsonpath {
                                 ++p_;
                                 ++column_;
                                 state_stack_.emplace_back(path_state::sub_expression);
+                                state_stack_.emplace_back(path_state::expect_dot_expression_or_recursive_descent);
                                 break;
                             case '|':
                                 ++p_;
@@ -4588,6 +4653,22 @@ namespace jsonpath {
                         }
                         break;
                     }
+                    case path_state::expect_dot_expression_or_recursive_descent:
+                    {
+                        switch(*p_)
+                        {
+                            case '.':
+                                push_token(token(recursive_descent_arg));
+                                state_stack_.pop_back(); 
+                                ++p_;
+                                ++column_;
+                                break;
+                            default:
+                                state_stack_.pop_back(); 
+                                break;
+                        }
+                        break;
+                    }
                     case path_state::expect_and:
                     {
                         switch(*p_)
@@ -4945,16 +5026,7 @@ namespace jsonpath {
                     }
                     break;
                 case token_type::expression:
-                    /*if (!output_stack_.empty() && output_stack_.back().is_projection() && 
-                        (tok.precedence_level() < output_stack_.back().precedence_level() ||
-                        (tok.precedence_level() == output_stack_.back().precedence_level() && tok.is_right_associative())))
-                    {
-                        output_stack_.back().expression_->add_expression(std::move(tok.expression_));
-                    }
-                    else*/
-                    {
-                        output_stack_.emplace_back(std::move(tok));
-                    }
+                    output_stack_.emplace_back(std::move(tok));
                     break;
                 case token_type::rparen:
                     {
@@ -5052,6 +5124,7 @@ namespace jsonpath {
                     output_stack_.emplace_back(std::move(tok));
                     operator_stack_.emplace_back(token(lparen_arg));
                     break;
+                case token_type::recursive_descent:
                 case token_type::current_node:
                     output_stack_.emplace_back(std::move(tok));
                     break;

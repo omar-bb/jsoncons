@@ -1,0 +1,21 @@
+[
+    {
+        "given" : {
+             "object": {
+                 "key": "value",
+                 "array": [
+                     {"key": "something"},
+                     {"key": {"key": "russian dolls"}}
+                 ]
+             },
+             "key": "top"
+        },
+        "cases" : [
+            {
+                "comment" : "Dot notation after recursive descent",
+                "expression" : "$..key",
+                "result" : ["top","value","something",{"key":"russian dolls"},"russian dolls"]
+            }
+        ]
+    }
+]
