@@ -2761,22 +2761,28 @@ namespace jsonpath {
             {
             }
 
-            reference evaluate(reference val, bool recursive_descent, eval_context& context, std::error_code& ec) const override
+            reference evaluate(reference val, bool recursive, eval_context& context, std::error_code& ec) const override
             {
-                if (!val.is_object())
-                {
-                    return context.null_value();
-                }
-
                 auto result = context.create_json(json_array_arg);
-                for (auto item : val.object_range())
+                if (val.is_object())
                 {
-                    if (!item.value().is_null())
+                    for (auto item : val.object_range())
                     {
-                        auto j = this->apply_expressions(item.value(), recursive_descent, context, ec);
-                        if (!j.is_null())
+                        auto j = this->apply_expressions(item.value(), recursive, context, ec);
+                        for (auto& elem : j.array_range())
                         {
-                            result->push_back(j);
+                            result->push_back(elem);
+                        }
+                    }
+                }
+                else if (val.is_array())
+                {
+                    for (reference item : val.array_range())
+                    {
+                        auto j = this->apply_expressions(item, recursive, context, ec);
+                        for (auto& elem : j.array_range())
+                        {
+                            result->push_back(elem);
                         }
                     }
                 }
@@ -2889,9 +2895,9 @@ namespace jsonpath {
                     for (int64_t i = start; i < end; i += step)
                     {
                         auto j = this->apply_expressions(val.at(static_cast<std::size_t>(i)), recursive_descent, context, ec);
-                        if (!j.is_null())
+                        for (auto& elem : j.array_range())
                         {
-                            result->push_back(j);
+                            result->push_back(elem);
                         }
                     }
                 }
@@ -2908,9 +2914,9 @@ namespace jsonpath {
                     for (int64_t i = start; i > end; i += step)
                     {
                         auto j = this->apply_expressions(val.at(static_cast<std::size_t>(i)), recursive_descent, context, ec);
-                        if (!j.is_null())
+                        for (auto& elem : j.array_range())
                         {
-                            result->push_back(j);
+                            result->push_back(elem);
                         }
                     }
                 }
@@ -4855,10 +4861,10 @@ namespace jsonpath {
 
             push_token(end_of_expression_arg);
 
-            //for (auto& t : output_stack_)
-            //{
-            //    std::cout << t.to_string() << std::endl;
-            //}
+            for (auto& t : output_stack_)
+            {
+                std::cout << t.to_string() << std::endl;
+            }
 
             if (paren_level != 0)
             {
@@ -5026,7 +5032,16 @@ namespace jsonpath {
                     }
                     break;
                 case token_type::expression:
-                    output_stack_.emplace_back(std::move(tok));
+                    if (!output_stack_.empty() && output_stack_.back().is_projection() && 
+                        (tok.precedence_level() < output_stack_.back().precedence_level() ||
+                        (tok.precedence_level() == output_stack_.back().precedence_level() && tok.is_right_associative())))
+                    {
+                        output_stack_.back().expression_->add_expression(std::move(tok.expression_));
+                    }
+                    else
+                    {
+                        output_stack_.emplace_back(std::move(tok));
+                    }
                     break;
                 case token_type::rparen:
                     {

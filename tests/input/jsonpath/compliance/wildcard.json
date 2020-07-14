@@ -1,0 +1,12 @@
+[
+    {
+        "given" : [[1], [2,3]],
+        "cases" : [
+            {
+                "comment" : "Bracket notation with number after dot notation with wildcard on nested arrays with different length",
+                "expression" : "$.*[1]",
+                "result" : [3]
+            }
+        ]
+    }
+]
