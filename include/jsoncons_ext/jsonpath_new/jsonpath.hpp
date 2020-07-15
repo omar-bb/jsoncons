@@ -2817,20 +2817,33 @@ namespace jsonpath {
 
             reference evaluate(reference val, bool recursive_descent, eval_context& context, std::error_code& ec) const override
             {
-                if (!val.is_array())
-                {
-                    return context.null_value();
-                }
-
                 auto result = context.create_json(json_array_arg);
-                for (reference item : val.array_range())
+                if (val.is_object())
                 {
-                    if (!item.is_null())
+                    for (auto item : val.object_range())
                     {
-                        auto j = this->apply_expressions(item, recursive_descent, context, ec);
-                        if (!j.is_null())
+                        auto j = this->apply_expressions(item.value(), recursive_descent, context, ec);
+                        for (auto& elem : j.array_range())
                         {
-                            result->push_back(j);
+                            result->push_back(elem);
+                        }
+                    }
+                }
+                else if (val.is_array())
+                {
+                    for (reference item : val.array_range())
+                    {
+                        if (!this->expressions_.empty())
+                        {
+                            auto j = this->apply_expressions(item, recursive_descent, context, ec);
+                            for (auto& elem : j.array_range())
+                            {
+                                result->push_back(elem);
+                            }
+                        }
+                        else
+                        {
+                            result->push_back(item);
                         }
                     }
                 }
