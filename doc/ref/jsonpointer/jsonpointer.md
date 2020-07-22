@@ -14,12 +14,12 @@ When applied to a JSON array, the character `-` indicates one past the last elem
 ### Classes
 <table border="0">
   <tr>
-    <td><a href="address.md">basic_address</a></td>
-    <td>Objects of type <code>basic_address</code> represent JSON Pointer addresses.</td> 
+    <td><a href="basic_json_ptr.md">basic_json_ptr</a></td>
+    <td>Objects of type <code>basic_json_ptr</code> represent a JSON Pointer.</td> 
   </tr>
 </table>
 
-### Non-member functions
+### Functions
 
 <table border="0">
   <tr>
@@ -31,12 +31,12 @@ When applied to a JSON array, the character `-` indicates one past the last elem
     <td>Get a value from a JSON document using JSON Pointer path notation.</td> 
   </tr>
   <tr>
-    <td><a href="insert.md">insert</a></td>
-    <td>Inserts a value in a JSON document using JSON Pointer path notation, if the path doesn't specify an object member that already has the same key.</td> 
+    <td><a href="add.md">add</a></td>
+    <td>Inserts a value in a JSON document using JSON Pointer path notation, or if the path specifies an object member that already has the same key, assigns the new value to that member.</td> 
   </tr>
   <tr>
-    <td><a href="insert_or_assign.md">insert_or_assign</a></td>
-    <td>Inserts a value in a JSON document using JSON Pointer path notation, or if the path specifies an object member that already has the same key, assigns the new value to that member.</td> 
+    <td><a href="insert.md">insert</a></td>
+    <td>Inserts a value in a JSON document using JSON Pointer path notation, if the path doesn't specify an object member that already has the same key.</td> 
   </tr>
   <tr>
     <td><a href="remove.md">remove</a></td>
@@ -45,6 +45,10 @@ When applied to a JSON array, the character `-` indicates one past the last elem
   <tr>
     <td><a href="replace.md">replace</a></td>
     <td>Replaces a value in a JSON document using JSON Pointer path notation.</td> 
+  </tr>
+  <tr>
+    <td><a href="flatten.md">flatten<br>unflatten</a></td>
+    <td>Flattens a json object or array into a single depth object of JSON Pointer-value pairs.</td> 
   </tr>
 </table>
 
@@ -56,7 +60,9 @@ When applied to a JSON array, the character `-` indicates one past the last elem
 #include <jsoncons/json.hpp>
 #include <jsoncons_ext/jsonpointer/jsonpointer.hpp>
 
-using namespace jsoncons;
+// for brevity
+using jsoncons::json; 
+namespace jsonpointer = jsoncons::jsonpointer;
 
 int main()
 {
@@ -106,13 +112,14 @@ Output:
 (2) "Sayings of the Century"
 ```
 
-#### Using addresses with jsonpointer::get 
+#### Using jsonpointer::json_ptr with jsonpointer::get 
 
 ```c++
 #include <jsoncons/json.hpp>
 #include <jsoncons_ext/jsonpointer/jsonpointer.hpp>
 
-using namespace jsoncons;
+using jsoncons::json; 
+namespace jsonpointer = jsoncons::jsonpointer;
 
 int main()
 {
@@ -123,20 +130,20 @@ int main()
        }
     )");
 
-    jsonpointer::address addr;
-    addr /= "m~n";
-    addr /= "1";
+    jsonpointer::json_ptr ptr;
+    ptr /= "m~n";
+    ptr /= "1";
 
-    std::cout << "(1) " << addr << "\n\n";
+    std::cout << "(1) " << ptr << "\n\n";
 
     std::cout << "(2)\n";
-    for (const auto& item : addr)
+    for (const auto& item : ptr)
     {
         std::cout << item << "\n";
     }
     std::cout << "\n";
 
-    json item = jsonpointer::get(j, addr);
+    json item = jsonpointer::get(j, ptr);
     std::cout << "(3) " << item << "\n";
 }
 ```

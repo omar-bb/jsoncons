@@ -10,7 +10,7 @@ array_iterator insert(const_array_iterator pos, InputIt first, InputIt last); //
 (1) Adds a new json element at the specified position of a json array, shifting all elements currently at or above that position to the right.
 The argument `val` is forwarded to the `json` constructor as `std::forward<T>(val)`.
 Returns an `array_iterator` that points to the new value
-Throws `std::runtime_error` if not an array.  
+Throws `std::domain_error` if not an array.  
 
 (2) Inserts elements from range [first, last) before pos.
 
@@ -22,18 +22,14 @@ void insert(InputIt first, InputIt last); // (3)
 (3) Inserts elements from range `[first, last)` into a json object. 
     If multiple elements in the range have the same key, the first element in the range is inserted.
     The function template parameter `InputIt` represents an input
-    iterator type that iterates over elements of type `key_value<string_type,json_type>`,
-    or alternatively over elements of type `std::pair<T1,T2>` where `T1` is convertible to `string_type` and `T2` is convertible to `json_type`. 
-
-#### See also
-
-- [push_back](json/push_back.md)
+    iterator type that iterates over elements of type `key_value_type`,
+    or alternatively over elements of type `std::pair<T1,T2>` where `T1` is convertible to `key_type` and `T2` is convertible to `basic_json`. 
 
 ### Examples
 
 #### Creating an array of elements 
 ```c++
-json cities = json::array();       // an empty array
+json cities(json_array_arg);       // an empty array
 std::cout << cities << std::endl;  // output is "[]"
 
 cities.push_back("Toronto");  
@@ -50,7 +46,7 @@ Output:
 ```
 #### Creating an array of elements with reserved storage 
 ```c++
-json cities = json::array();  
+json cities(json_array_arg);  
 cities.reserve(10);  // storage is reserved
 std::cout << "capacity=" << cities.capacity() 
           << ", size=" << cities.size() << std::endl;
@@ -121,5 +117,8 @@ Output:
 {"a":1.0,"b":2.0,"c":3.0,"d":4.0,"e":5.0,"f":6.0}
 ```
 
+### See also
+
+[push_back](push_back.md)
 
 

@@ -14,13 +14,14 @@ namespace jsoncons { namespace csv {
 
     enum class csv_errc : int
     {
-        ok = 0,
+        success = 0,
         unexpected_eof = 1,
         source_error,
         expected_quote,
-        invalid_csv_text,
-        invalid_state,
-        invalid_escaped_char
+        syntax_error,
+        invalid_parse_state,
+        invalid_escaped_char,
+        unexpected_char_between_fields
     };
 
 #if !defined(JSONCONS_NO_DEPRECATED)
@@ -45,12 +46,14 @@ public:
                 return "Source error";
             case csv_errc::expected_quote:
                 return "Expected quote character";
-            case csv_errc::invalid_csv_text:
-                return "Invalid CSV text";
-            case csv_errc::invalid_state:
+            case csv_errc::syntax_error:
+                return "CSV syntax error";
+            case csv_errc::invalid_parse_state:
                 return "Invalid CSV parser state";
             case csv_errc::invalid_escaped_char:
                 return "Invalid character following quote escape character";
+            case csv_errc::unexpected_char_between_fields:
+                return "Unexpected character between fields";
             default:
                 return "Unknown CSV parser error";
         }

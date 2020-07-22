@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.0.2)
 
 if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     project(jsoncons-test)
@@ -67,7 +67,6 @@ endif()
 set(CTEST_OUTPUT_ON_FAILURE ON)
 
 set(JSONCONS_TESTS_DIR ${JSONCONS_PROJECT_DIR}/tests)
-set(JSONCONS_TESTS_SOURCE_DIR ${JSONCONS_PROJECT_DIR}/tests/src)
 set(JSONCONS_INCLUDE_DIR ${JSONCONS_PROJECT_DIR}/include)
 set(JSONCONS_THIRD_PARTY_INCLUDE_DIR ${JSONCONS_PROJECT_DIR}/third_party)
 
@@ -75,12 +74,13 @@ set(CATCH_INCLUDE_DIR ${JSONCONS_THIRD_PARTY_INCLUDE_DIR}/catch)
 add_library(Catch INTERFACE)
 target_include_directories (Catch INTERFACE ${CATCH_INCLUDE_DIR})
 
-file(GLOB_RECURSE JSONCONS_TESTS_SOURCES ${JSONCONS_TESTS_SOURCE_DIR}/*.cpp)
+#file(GLOB_RECURSE JSONCONS_TESTS_SOURCES ${JSONCONS_TESTS_DIR}/*.cpp)
+#message((${JSONCONS_TESTS_SOURCES}))
 
-#set(JSONCONS_TESTS_SOURCES
-#     ${JSONCONS_TESTS_SOURCE_DIR}/tests_main.cpp
-#     ${JSONCONS_TESTS_SOURCE_DIR}/jsonpath/jsonpath_tests.cpp
-# )
+set(JSONCONS_TESTS_SOURCES
+   ${JSONCONS_TESTS_DIR}/src/json_type_traits_chrono_tests.cpp
+   ${JSONCONS_TESTS_DIR}/src/tests_main.cpp
+)
 set(JSONCONS_TARGET test_jsoncons)
 add_executable(${JSONCONS_TARGET} EXCLUDE_FROM_ALL ${JSONCONS_TESTS_SOURCES} ${JSONCONS_HEADERS})
 

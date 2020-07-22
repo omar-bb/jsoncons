@@ -1,7 +1,7 @@
 ### jsoncons::basic_json
 
 ```c++
-#include <jsoncons/json.hpp>
+#include <jsoncons/basic_json.hpp>
 
 template< 
     class CharT,
@@ -33,7 +33,7 @@ Type                |Definition
 Member type                         |Definition
 ------------------------------------|------------------------------
 `char_type`|CharT
-`implementation_policy'|ImplementationPolicy
+`implementation_policy`|ImplementationPolicy
 `allocator_type`|Allocator
 `char_traits_type`|`std::char_traits<char_type>`
 `char_allocator_type`|`allocator_type` rebound to `char_type`
@@ -44,8 +44,6 @@ Member type                         |Definition
 `string_view_type`|`basic_string_view<char_type>`
 `key_type`|std::basic_string<char_type,char_traits_type,char_allocator_type>
 `key_value_type`|`key_value<key_type,basic_json>`
-`object`|`json_object<key_type,basic_json>`
-`array`|`json_array<basic_json>`
 `object_iterator`|A [RandomAccessIterator](http://en.cppreference.com/w/cpp/concept/RandomAccessIterator) to [key_value_type](json/key_value.md)
 `const_object_iterator`|A const [RandomAccessIterator](http://en.cppreference.com/w/cpp/concept/RandomAccessIterator) to const [key_value_type](json/key_value.md)
 `array_iterator`|A [RandomAccessIterator](http://en.cppreference.com/w/cpp/concept/RandomAccessIterator) to `basic_json`
@@ -93,11 +91,11 @@ Returns the allocator associated with the basic_json value.
 <table border="0">
   <tr>
     <td><a href="json/array_range.md">array_range</a></td>
-    <td>Returns a "range" that supports a range-based for loop over the elements of a `basic_json` array.</td> 
+    <td>Returns a range that supports a range-based for loop over the elements of a <code>basic_json</code> array.</td> 
   </tr>
   <tr>
     <td><a href="json/object_range.md">obect_range</a></td>
-    <td>Returns a "range" that supports a range-based for loop over the key-value pairs of a `basic_json` object.</td> 
+    <td>Returns a range that supports a range-based for loop over the key-value pairs of a <code>basic_json</code> object.</td> 
   </tr>
 </table>
 
@@ -106,7 +104,7 @@ Returns the allocator associated with the basic_json value.
 <table border="0">
   <tr>
     <td><a>size_t size() const noexcept</a></td>
-    <td>Returns the number of elements in a basic_json array, or the number of members in a basic_json object, or `zero`</td> 
+    <td>Returns the number of elements in a basic_json array, or the number of members in a <code><basic_json</code> object, or <code>zero</code></td> 
   </tr>
   <tr>
     <td><a>bool empty() const noexcept</a></td>
@@ -117,16 +115,16 @@ Returns the allocator associated with the basic_json value.
     <td>Returns the size of the storage space currently allocated for a basic_json object or array</td> 
   </tr>
   <tr>
-    <td><a>void reserve(size_t n)</a></td>
-    <td>Increases the capacity of a basic_json object or array to allow at least `n` members or elements</td> 
+    <td><a>void reserve(std::size_t n)</a></td>
+    <td>Increases the capacity of a basic_json object or array to allow at least <code>n</code> members or elements</td> 
   </tr>
   <tr>
-    <td><a>void resize(size_t n)</a></td>
-    <td>Resizes a basic_json array so that it contains `n` elements</td> 
+    <td><a>void resize(std::size_t n)</a></td>
+    <td>Resizes a basic_json array so that it contains <code>n</code> elements</td> 
   </tr>
   <tr>
-    <td><a>void resize(size_t n, const basic_json& val)</a></td>
-    <td>Resizes a basic_json array so that it contains `n` elements that are initialized to `val`</td> 
+    <td><a>void resize(std::size_t n, const basic_json& val)</a></td>
+    <td>Resizes a basic_json array so that it contains <code>n</code> elements that are initialized to <code>val</code></td> 
   </tr>
   <tr>
     <td><a>void shrink_to_fit()</a></td>
@@ -138,8 +136,8 @@ Returns the allocator associated with the basic_json value.
 
 <table border="0">
   <tr>
-    <td><code>bool contains(const string_view_type& key) const</code></td>
-    <td>Returns <code>true</code> if an object has a member with the given `key`, otherwise <code>false</code></td> 
+    <td><code>bool contains(const string_view_type& key) const noexcept</code></td>
+    <td>Returns <code>true</code> if an object has a member with the given <code>key</code> , otherwise <code>false</code></td> 
   </tr>
   <tr>
     <td><a href="json/is.md">is</a></td>
@@ -154,34 +152,30 @@ Returns the allocator associated with the basic_json value.
     <td>Access or insert specified element.</td> 
   </tr>
   <tr>
-    <td><a href="json/at.md">at</a></td>
-    <td>Access specified element.</td> 
+    <td><a href="json/at.md">at<br>at_or_null</a></td>
+    <td>Return the specified value.</td> 
+  </tr>
+  <tr>
+    <td><a href="json/get_value_or.md">get_value_or</a></td>
+    <td>Return the specified value if available, otherwise a default value.</td> 
   </tr>
 </table>
 
     semantic_tag tag() const
 Returns the [semantic_tag](semantic_tag.md) associated with this value
+
+    uint64_t ext_tag() const
+If `tag()` == `semantic_tag::ext`, returns a format specific tag associated with a byte string value,
+otherwise return 0. An example is a MessagePack `type` in the range 0-127 associated with the
+MessagePack ext format family, or a CBOR tag preceeding a byte string. 
+
+    json_type type() const
+Returns the [json type](json_type.md) associated with this value
  
     object_iterator find(const string_view_type& name)
     const_object_iterator find(const string_view_type& name) const
 Returns an object iterator to a member whose name compares equal to `name`. If there is no such member, returns `object_range.end()`.
-Throws `std::runtime_error` if not an object.  
-
-    const basic_json& get_with_default(const string_view_type& name) const
-If `name` matches the name of a member in the basic_json object, returns the member value converted to the default's data type, otherwise returns `null`.
-Throws `std::runtime_error` if not an object or null value.
-
-    template <class T>
-    T get_with_default(const string_view_type& name, 
-                       const T& default_val) const
-If `name` matches the name of a member in the basic_json object, returns the member value converted to the default's data type, otherwise returns `default_val`.
-Throws `std::runtime_error` if not an object or null value.
-
-    template <class T = std::string>
-    T get_with_default(const string_view_type& name, 
-                       const char_type* default_val) const
-Make `get_with_default` do the right thing for string literals. 
-Throws `std::runtime_error` if not an object or null value. 
+Throws `std::domain_error` if not an object.  
 
 #### Modifiers
 
@@ -227,7 +221,7 @@ Throws `std::runtime_error` if not an object or null value.
     <td>Inserts another basic_json object's key-value pairs into a basic_json object, or assigns them if they already exist.</td>
   </tr>
   <tr>
-    <td><a>void swap(basic_json& val)</a></td>
+    <td><a>void swap(basic_json& val) noexcept</a></td>
     <td>Exchanges the content of the <code>basic_json</code> value with the content of <code>val</code>, which is another <code>basic_json</code> value</td>
   </tr>
 </table>
@@ -284,6 +278,6 @@ Inserts basic_json value into stream using the specified [basic_json_options](ba
     std::basic_ostream<char_type>& pretty_print(const basic_json& val, const basic_json_options<CharT>& options)  
 Inserts basic_json value into stream using the specified [basic_json_options](basic_json_options.md) if supplied.
 
-    void swap(basic_json& a, basic_json& b)
+    void swap(basic_json& a, basic_json& b) noexcept
 Exchanges the values of `a` and `b`
 

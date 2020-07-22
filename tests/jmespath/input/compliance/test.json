@@ -1,0 +1,11 @@
+[{
+    "given": [],
+  "cases": [
+      {
+          "comment": "",
+          "expression": "[*.*]",
+          "result": [null]
+      }
+  ]
+}
+]

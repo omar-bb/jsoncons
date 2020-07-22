@@ -136,7 +136,7 @@ enum class conv_flags
 
 enum class conv_errc 
 {
-    ok = 0,
+    success = 0,
     over_long_utf8_sequence = 1, // over long utf8 sequence
     expected_continuation_byte,  // expected continuation byte    
     unpaired_high_surrogate,     // unpaired high surrogate UTF-16
@@ -189,11 +189,23 @@ std::error_code make_error_code(conv_errc result)
     return std::error_code(static_cast<int>(result),unicode_traits_error_category());
 }
 
+} // unicons
+} // jsoncons
+
+namespace std {
+    template<>
+    struct is_error_code_enum<jsoncons::unicons::conv_errc> : public true_type
+    {
+    };
+}
+
+namespace jsoncons { namespace unicons {
+
 // encoding_errc
 
 enum class encoding_errc
 {
-    ok = 0,
+    success = 0,
     expected_u8_found_u16 = 1,
     expected_u8_found_u32,
     expected_u16_found_fffe,
@@ -246,7 +258,7 @@ template <class Iterator>
 typename std::enable_if<std::is_integral<typename std::iterator_traits<Iterator>::value_type>::value 
                               && sizeof(typename std::iterator_traits<Iterator>::value_type) == sizeof(uint8_t), 
                               conv_errc >::type
-is_legal_utf8(Iterator first, size_t length) 
+is_legal_utf8(Iterator first, std::size_t length) 
 {
     uint8_t a;
     Iterator srcptr = first+length;
@@ -309,7 +321,7 @@ struct is_same_size : std::false_type
 template<class T1, class T2>
 struct is_same_size<T1, T2, typename std::enable_if<!std::is_void<T1>::value && !std::is_void<T2>::value>::type>
 {
-    static const bool value = (sizeof(T1) == sizeof(T2));
+    static constexpr bool value = (sizeof(T1) == sizeof(T2));
 }; 
 
 template<class OutputIt, class CharT, class Enable = void>
@@ -357,8 +369,8 @@ convert(InputIt first, InputIt last, OutputIt target, conv_flags flags=conv_flag
     conv_errc  result = conv_errc();
     while (first != last) 
     {
-        size_t length = trailing_bytes_for_utf8[static_cast<uint8_t>(*first)] + 1;
-        if (length > (size_t)(last - first))
+        std::size_t length = trailing_bytes_for_utf8[static_cast<uint8_t>(*first)] + 1;
+        if (length > (std::size_t)(last - first))
         {
             return convert_result<InputIt>{first, conv_errc::source_exhausted};
         }
@@ -880,8 +892,8 @@ validate(InputIt first, InputIt last) UNICONS_NOEXCEPT
     conv_errc  result = conv_errc();
     while (first != last) 
     {
-        size_t length = static_cast<size_t>(trailing_bytes_for_utf8[static_cast<uint8_t>(*first)]) + 1;
-        if (length > (size_t)(last - first))
+        std::size_t length = static_cast<std::size_t>(trailing_bytes_for_utf8[static_cast<uint8_t>(*first)]) + 1;
+        if (length > (std::size_t)(last - first))
         {
             return convert_result<InputIt>{first, conv_errc::source_exhausted};
         }
@@ -970,9 +982,9 @@ template <class Iterator>
 class sequence
 {
     Iterator first_;
-    size_t length_;
+    std::size_t length_;
 public:
-    sequence(Iterator first, size_t length)
+    sequence(Iterator first, std::size_t length)
         : first_(first), length_(length)
     {
     }
@@ -982,7 +994,7 @@ public:
         return first_;
     }
 
-    size_t length() const
+    std::size_t length() const
     {
         return length_;
     }
@@ -1068,10 +1080,10 @@ class sequence_generator
     Iterator begin_;
     Iterator last_;
     conv_flags flags_;
-    size_t length_;
+    std::size_t length_;
     conv_errc err_cd_;
 public:
-    typedef sequence<Iterator> sequence_type;
+    using sequence_type = sequence<Iterator>;
 
     sequence_generator(Iterator first, Iterator last, 
                        conv_flags flags = conv_flags::strict) UNICONS_NOEXCEPT
@@ -1103,8 +1115,8 @@ public:
         begin_ += length_;
         if (begin_ != last_)
         {
-            size_t length = trailing_bytes_for_utf8[static_cast<uint8_t>(*begin_)] + 1;
-            if (length > (size_t)(last_ - begin_))
+            std::size_t length = trailing_bytes_for_utf8[static_cast<uint8_t>(*begin_)] + 1;
+            if (length > (std::size_t)(last_ - begin_))
             {
                 err_cd_ = conv_errc::source_exhausted;
             }
@@ -1187,11 +1199,11 @@ template <class InputIt>
 typename std::enable_if<std::is_integral<typename std::iterator_traits<InputIt>::value_type>::value 
                                && (sizeof(typename std::iterator_traits<InputIt>::value_type) == sizeof(uint8_t) || sizeof(typename std::iterator_traits<InputIt>::value_type) == sizeof(uint16_t)),
                                sequence<InputIt>>::type 
-sequence_at(InputIt first, InputIt last, size_t index) 
+sequence_at(InputIt first, InputIt last, std::size_t index) 
 {
     sequence_generator<InputIt> g(first, last, unicons::conv_flags::strict);
 
-    size_t count = 0;
+    std::size_t count = 0;
     while (!g.done() && count < index)
     {
         g.next();
@@ -1203,9 +1215,9 @@ sequence_at(InputIt first, InputIt last, size_t index)
 template <class InputIt>
 typename std::enable_if<std::is_integral<typename std::iterator_traits<InputIt>::value_type>::value && sizeof(typename std::iterator_traits<InputIt>::value_type) == sizeof(uint32_t),
                                sequence<InputIt>>::type 
-sequence_at(InputIt first, InputIt last, size_t index) 
+sequence_at(InputIt first, InputIt last, std::size_t index) 
 {
-    size_t size = std::distance(first,last);
+    std::size_t size = std::distance(first,last);
     return index < size ? sequence<InputIt>(first+index,1) : sequence<InputIt>(last,0);
 }
 
@@ -1225,7 +1237,7 @@ typename std::enable_if<std::is_integral<typename std::iterator_traits<InputIt>:
 u8_length(InputIt first, InputIt last) UNICONS_NOEXCEPT
 {
     conv_flags flags = conv_flags::strict;
-    size_t count = 0;
+    std::size_t count = 0;
     for (InputIt p = first; p != last; ++p)
     {
         uint32_t ch = *p;
@@ -1272,7 +1284,7 @@ template <class InputIt>
 typename std::enable_if<std::is_integral<typename std::iterator_traits<InputIt>::value_type>::value && sizeof(typename std::iterator_traits<InputIt>::value_type) == sizeof(uint32_t),size_t>::type 
 u8_length(InputIt first, InputIt last) UNICONS_NOEXCEPT
 {
-    size_t count = 0;
+    std::size_t count = 0;
     for (InputIt p = first; p < last; ++p)
     {
         uint32_t ch = *p;
@@ -1296,12 +1308,12 @@ u8_length(InputIt first, InputIt last) UNICONS_NOEXCEPT
 template <class InputIt>
 typename std::enable_if<std::is_integral<typename std::iterator_traits<InputIt>::value_type>::value 
                                && (sizeof(typename std::iterator_traits<InputIt>::value_type) == sizeof(uint8_t) || sizeof(typename std::iterator_traits<InputIt>::value_type) == sizeof(uint16_t)),
-                               size_t>::type 
+                               std::size_t>::type 
 u32_length(InputIt first, InputIt last) UNICONS_NOEXCEPT
 {
     sequence_generator<InputIt> g(first, last, unicons::conv_flags::strict);
 
-    size_t count = 0;
+    std::size_t count = 0;
     while (!g.done())
     {
         g.next();
@@ -1312,7 +1324,7 @@ u32_length(InputIt first, InputIt last) UNICONS_NOEXCEPT
 
 template <class InputIt>
 typename std::enable_if<std::is_integral<typename std::iterator_traits<InputIt>::value_type>::value && sizeof(typename std::iterator_traits<InputIt>::value_type) == sizeof(uint32_t),
-                               size_t>::type 
+                               std::size_t>::type 
 u32_length(InputIt first, InputIt last) UNICONS_NOEXCEPT
 {
     return std::distance(first,last);
@@ -1478,10 +1490,6 @@ skip_bom(Iterator first, Iterator last) UNICONS_NOEXCEPT
 } // jsoncons
 
 namespace std {
-    template<>
-    struct is_error_code_enum<jsoncons::unicons::conv_errc> : public true_type
-    {
-    };
     template<>
     struct is_error_code_enum<jsoncons::unicons::encoding_errc> : public true_type
     {

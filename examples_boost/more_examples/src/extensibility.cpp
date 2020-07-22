@@ -40,16 +40,16 @@ namespace jsoncons {
         }
 
         static Json to_json(boost::gregorian::date val, 
-                            typename Json::allocator_type allocator = Json::allocator_type())
+                            typename Json::allocator_type alloc = Json::allocator_type())
         {
-            return Json(to_iso_extended_string(val), allocator);
+            return Json(to_iso_extended_string(val), alloc);
         }
     };
 
     template <class Json, class Backend>
     struct json_type_traits<Json,boost::multiprecision::number<Backend>>
     {
-        typedef boost::multiprecision::number<Backend> multiprecision_type;
+        using multiprecision_type = boost::multiprecision::number<Backend>;
 
         static bool is(const Json& val) noexcept
         {
@@ -77,7 +77,7 @@ namespace jsoncons {
     template <class Json, class T>
     struct json_type_traits<Json,boost::numeric::ublas::matrix<T>>
     {
-        typedef typename Json::allocator_type allocator_type;
+        using allocator_type = typename Json::allocator_type;
 
         static bool is(const Json& val) noexcept
         {
@@ -87,7 +87,7 @@ namespace jsoncons {
             }
             if (val.size() > 0)
             {
-                size_t n = val[0].size();
+                std::size_t n = val[0].size();
                 for (const auto& a: val.array_range())
                 {
                     if (!(a.is_array() && a.size() == n))
@@ -110,8 +110,8 @@ namespace jsoncons {
         {
             if (val.is_array() && val.size() > 0)
             {
-                size_t m = val.size();
-                size_t n = 0;
+                std::size_t m = val.size();
+                std::size_t n = 0;
                 for (const auto& a : val.array_range())
                 {
                     if (a.size() > n)
@@ -121,10 +121,10 @@ namespace jsoncons {
                 }
 
                 boost::numeric::ublas::matrix<T> A(m,n,T());
-                for (size_t i = 0; i < m; ++i)
+                for (std::size_t i = 0; i < m; ++i)
                 {
                     const auto& a = val[i];
-                    for (size_t j = 0; j < a.size(); ++j)
+                    for (std::size_t j = 0; j < a.size(); ++j)
                     {
                         A(i,j) = a[j].template as<T>();
                     }
@@ -139,12 +139,12 @@ namespace jsoncons {
         }
 
         static Json to_json(const boost::numeric::ublas::matrix<T>& val,
-                            allocator_type allocator = allocator_type())
+                            allocator_type alloc = allocator_type())
         {
             Json a = Json::template make_array<2>(val.size1(), val.size2(), T());
-            for (size_t i = 0; i < val.size1(); ++i)
+            for (std::size_t i = 0; i < val.size1(); ++i)
             {
-                for (size_t j = 0; j < val.size1(); ++j)
+                for (std::size_t j = 0; j < val.size1(); ++j)
                 {
                     a[i][j] = val(i,j);
                 }
@@ -174,7 +174,7 @@ namespace ns {
     };
 } namespace ns
 
-JSONCONS_GETTER_CTOR_TRAITS_DECL(ns::fixing, index_id, observation_date, rate)
+JSONCONS_ALL_CTOR_GETTER_TRAITS(ns::fixing, index_id, observation_date, rate)
 
 using namespace jsoncons;
 using boost::numeric::ublas::matrix;
@@ -186,7 +186,7 @@ void boost_date_conversions()
     json deal;
     deal["maturity"] = date(2014,10,14);
 
-    json observation_dates = json::array();
+    json observation_dates(json_array_arg);
     observation_dates.push_back(date(2014,2,14));
     observation_dates.push_back(date(2014,2,21));
 
@@ -247,7 +247,7 @@ void boost_multiprecison_conversions()
     std::cout << "(1) " << std::setprecision(std::numeric_limits<multiprecision_type>::max_digits10)
         << x << "\n";
 
-    json j2 = json::array{x};
+    json j2(json_array_arg,{x});
     std::cout << "(2) " << j2[0].as<std::string>() << "\n";
 }
 

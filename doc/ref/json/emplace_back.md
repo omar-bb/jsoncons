@@ -15,12 +15,12 @@ A reference to the emplaced json value.
 
 #### Exceptions
 
-Throws `std::runtime_error` if not a json array.
+Throws `std::domain_error` if not a json array.
 
 ### Example
 
 ```c++
-json arr = json::array();
+json arr(json_array_arg);
 arr.emplace_back(10);
 arr.emplace_back(20);
 arr.emplace_back(30);

@@ -3,7 +3,7 @@
 
 #include <fstream>
 #include <jsoncons/json.hpp>
-#include <jsoncons_ext/jsonpath/json_query.hpp>
+#include <jsoncons_ext/jsonpath/jsonpath.hpp>
 
 using namespace jsoncons;
 using namespace jsoncons::jsonpath;
@@ -58,7 +58,7 @@ void basics_json_example1()
     )");
 
     // Construct a booklist array
-    json booklist = json::array();
+    json booklist(json_array_arg);
 
     // For efficiency, reserve memory, to avoid reallocations
     booklist.reserve(4);
@@ -107,7 +107,7 @@ void basics_json_example1()
         // book has member "author"
     }
 
-    std::string s = book.get_with_default("author", "author unknown");
+    std::string s = book.get_value_or<std::string>("author", "author unknown");
     // Returns author if found, otherwise "author unknown"
 
     try

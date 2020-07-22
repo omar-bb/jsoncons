@@ -13,8 +13,7 @@
 #include <utility> // std::move
 #include <jsoncons/json.hpp>
 #include <jsoncons/source.hpp>
-#include <jsoncons/json_content_handler.hpp>
-#include <jsoncons/config/binary_detail.hpp>
+#include <jsoncons/config/jsoncons_config.hpp>
 #include <jsoncons_ext/cbor/cbor_encoder.hpp>
 #include <jsoncons_ext/cbor/cbor_error.hpp>
 #include <jsoncons_ext/cbor/cbor_detail.hpp>
@@ -22,16 +21,53 @@
 
 namespace jsoncons { namespace cbor {
 
-template <class Src>
+template <class Src,class Allocator=std::allocator<char>>
 class basic_cbor_reader : public ser_context
 {
-    basic_cbor_parser<Src> parser_;
-    json_content_handler& handler_;
+    using char_type = char;
+
+    basic_cbor_parser<Src,Allocator> parser_;
+    basic_json_visitor2_to_visitor_adaptor<char_type,Allocator> adaptor_;
+    json_visitor2& visitor_;
 public:
     template <class Source>
-    basic_cbor_reader(Source&& source, json_content_handler& handler)
-       : parser_(std::forward<Source>(source)),
-         handler_(handler)
+    basic_cbor_reader(Source&& source, 
+                      json_visitor& visitor, 
+                      const Allocator alloc)
+       : basic_cbor_reader(std::forward<Source>(source),
+                           visitor,
+                           cbor_decode_options(),
+                           alloc)
+    {
+    }
+
+    template <class Source>
+    basic_cbor_reader(Source&& source, 
+                      json_visitor& visitor, 
+                      const cbor_decode_options& options = cbor_decode_options(),
+                      const Allocator alloc=Allocator())
+       : parser_(std::forward<Source>(source), options, alloc),
+         adaptor_(visitor, alloc), visitor_(adaptor_)
+    {
+    }
+    template <class Source>
+    basic_cbor_reader(Source&& source, 
+                      json_visitor2& visitor, 
+                      const Allocator alloc)
+       : basic_cbor_reader(std::forward<Source>(source),
+                           visitor,
+                           cbor_decode_options(),
+                           alloc)
+    {
+    }
+
+    template <class Source>
+    basic_cbor_reader(Source&& source, 
+                      json_visitor2& visitor, 
+                      const cbor_decode_options& options = cbor_decode_options(),
+                      const Allocator alloc=Allocator())
+       : parser_(std::forward<Source>(source), options, alloc),
+         visitor_(visitor)
     {
     }
 
@@ -41,41 +77,34 @@ public:
         read(ec);
         if (ec)
         {
-            throw ser_error(ec,line(),column());
+            JSONCONS_THROW(ser_error(ec,line(),column()));
         }
     }
 
     void read(std::error_code& ec)
     {
-        try
+        parser_.reset();
+        parser_.parse(visitor_, ec);
+        if (ec)
         {
-            parser_.reset();
-            parser_.parse(handler_, ec);
-            if (ec)
-            {
-                return;
-            }
-        }
-        catch (const ser_error& e)
-        {
-            ec = e.code();
+            return;
         }
     }
 
-    size_t line() const override
+    std::size_t line() const override
     {
         return parser_.line();
     }
 
-    size_t column() const override
+    std::size_t column() const override
     {
         return parser_.column();
     }
 };
 
-typedef basic_cbor_reader<jsoncons::binary_stream_source> cbor_stream_reader;
+using cbor_stream_reader = basic_cbor_reader<jsoncons::binary_stream_source>;
 
-typedef basic_cbor_reader<jsoncons::bytes_source> cbor_bytes_reader;
+using cbor_bytes_reader = basic_cbor_reader<jsoncons::bytes_source>;
 
 #if !defined(JSONCONS_NO_DEPRECATED)
 JSONCONS_DEPRECATED_MSG("Instead, use cbor_stream_reader") typedef cbor_stream_reader cbor_reader;

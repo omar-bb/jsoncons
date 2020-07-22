@@ -1,12 +1,16 @@
 ### jsoncons::cbor::cbor_options
 
 ```c++
-#include <jsoncons/cbor/cbor_options.hpp>
+#include <jsoncons_ext/cbor/cbor_options.hpp>
+
+class cbor_options;
 ```
 
-Specifies options for encoding and decoding CBOR.
+<br>
 
 ![cbor_options](./diagrams/cbor_options.png)
+
+Specifies options for reading and writing CBOR.
 
 #### Constructors
 
@@ -14,6 +18,12 @@ Specifies options for encoding and decoding CBOR.
 Constructs a `cbor_options` with default values. 
 
 #### Modifiers
+
+    void max_nesting_depth(int depth)
+The maximum nesting depth allowed when decoding and encoding CBOR. 
+Default is 1024. Parsing can have an arbitrarily large depth
+limited only by available memory. Serializing a [basic_json](../basic_json.md) to
+CBOR is limited by stack size.
 
     cbor_options& pack_strings(bool value)
 
@@ -30,13 +40,9 @@ will encode strings the usual CBOR way.
 This option does not affect decode - jsoncons will always decode
 string references if present.
 
-#### Static member functions
+    cbor_options& use_typed_arrays(bool value)
 
-    static const cbor_options& get_default_options()
-Default CBOR encode and decode options.
+This option does not affect decode - jsoncons will always decode
+typed arrays if present.
 
-### See also
-
-[cbor_decode_options](cbor_decode_options.md)
-[cbor_encode_options](cbor_encode_options.md)
 

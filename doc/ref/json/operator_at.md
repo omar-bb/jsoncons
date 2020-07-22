@@ -5,9 +5,9 @@ proxy_type operator[](const string_view_type& key); // (1)
 
 const_reference operator[](const string_view_type& key) const; // (2)
 
-reference operator[](size_t i); // (3)
+reference operator[](std::size_t i); // (3)
 
-const_reference operator[](size_t i) const; // (4)
+const_reference operator[](std::size_t i) const; // (4)
 ```
 
 (1) Returns a "reference-like" proxy object that can be used to access 
@@ -18,19 +18,19 @@ accessing and the key does not exist, `noexcept` accessors return a
 default value, e.g. the `is_xxx` functions return `false`, other 
 accessors throw.
 If assigning, inserts or updates with the new value. 
-Throws `std::runtime_error` if not an object. 
+Throws `std::domain_error` if not an object. 
 If read, throws `std::out_of_range` if the object does not have a 
 member with the specified key.  
 
 (2) If `key` matches the key of a member in the basic_json object, returns a reference to the basic_json object, otherwise throws.
-Throws `std::runtime_error` if not an object.
+Throws `std::domain_error` if not an object.
 Throws `std::out_of_range` if the object does not have a member with the specified key.  
 
 (3) Returns a reference to the value at index i in a `basic_json` object or array.
-Throws `std::runtime_error` if not an object or array.
+Throws `std::domain_error` if not an object or array.
 
 (4) Returns a `const_reference` to the value at index i in a `basic_json` object or array.
-Throws `std::runtime_error` if not an object or array.
+Throws `std::domain_error` if not an object or array.
 
 #### Notes
 
@@ -44,9 +44,9 @@ when this operator is used for reading but the key does not exist.
 ```c++
 int main()
 {
-    json image_formats = json::array{"JPEG","PSD","TIFF","DNG"};
+    json image_formats(json_array_arg, {"JPEG","PSD","TIFF","DNG"});
 
-    json color_spaces = json::array();
+    json color_spaces(json_array_arg);
     color_spaces.push_back("sRGB");
     color_spaces.push_back("AdobeRGB");
     color_spaces.push_back("ProPhoto RGB");

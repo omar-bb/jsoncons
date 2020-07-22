@@ -1,7 +1,7 @@
 ### jsoncons::msgpack::basic_msgpack_cursor
 
 ```c++
-#include <jsoncons/msgpack_cursor.hpp>
+#include <jsoncons_ext/msgpack/msgpack_cursor.hpp>
 
 template<
     class Src=jsoncons::binary_stream_source,
@@ -9,9 +9,14 @@ template<
 class basic_msgpack_cursor;
 ```
 
-A pull parser for reporting MSGPACK parse events. A typical application will 
+A pull parser for reporting MessagePack parse events. A typical application will 
 repeatedly process the `current()` event and call the `next()`
 function to advance to the next event, until `done()` returns `true`.
+In addition, when positioned on a `begin_object` event, 
+the `read_to` function can pull a complete object representing
+the events from `begin_object` to `end_object`, 
+and when positioned on a `begin_array` event, a complete array
+representing the events from `begin_array` ro `end_array`.
 
 `basic_msgpack_cursor` is noncopyable and nonmoveable.
 
@@ -24,33 +29,37 @@ msgpack_bytes_cursor   |basic_msgpack_cursor<jsoncons::bytes_source>
 
 ### Implemented interfaces
 
-[staj_reader](staj_reader.md)
+[staj_cursor](staj_cursor.md)
 
 #### Constructors
 
     template <class Source>
-    basic_msgpack_cursor(Source&& source); // (1)
+    basic_msgpack_cursor(Source&& source,
+                         const msgpack_decode_options& options = msgpack_decode_options(),
+                         const Allocator& alloc = Allocator()); // (1)
 
     template <class Source>
     basic_msgpack_cursor(Source&& source,
-                      std::function<bool(const staj_event&, const ser_context&)> filter); // (2)
-
-    template <class Source>
-    basic_msgpack_cursor(Source&& source, std::error_code& ec); // (3)
-
+                         std::error_code& ec); // (2)
     template <class Source>
     basic_msgpack_cursor(Source&& source,
-                      std::function<bool(const staj_event&, const ser_context&)> filter, 
-                      std::error_code& ec); // (4)
+                         const msgpack_decode_options& options,
+                         std::error_code& ec); // (3)
 
-Constructor3 (1)-(2) read from a buffer or stream source and throw a 
+    template <class Source>
+    basic_msgpack_cursor(std::allocator_arg_t, const Allocator& alloc, 
+                         Source&& source,
+                         const msgpack_decode_options& options,
+                         std::error_code& ec); // (4)
+
+Constructor (1) reads from a buffer or stream source and throws a 
 [ser_error](ser_error.md) if a parsing error is encountered while processing the initial event.
 
-Constructor3 (3)-(4) read from a buffer or stream source and set `ec`
+Constructors (2)-(4) read from a buffer or stream source and set `ec`
 if a parsing error is encountered while processing the initial event.
 
 Note: It is the programmer's responsibility to ensure that `basic_msgpack_cursor` does not outlive any source passed in the constuctor, 
-as `basic_msgpack_cursor` holds pointers to but does not own these resources.
+as `basic_msgpack_cursor` holds a pointer to but does not own this object.
 
 #### Parameters
 
@@ -62,21 +71,17 @@ as `basic_msgpack_cursor` holds pointers to but does not own these resources.
 Checks if there are no more events.
 
     const staj_event& current() const override;
-Returns the current [staj_event](staj_event.md).
+Returns the current [staj_event](basic_staj_event.md).
 
-    void read_to(json_content_handler& handler) override
-Sends the parse events from the current event to the
-matching completion event to the supplied [handler](json_content_handler.md)
-E.g., if the current event is `begin_object`, sends the `begin_object`
-event and all inbetween events until the matching `end_object` event.
-If a parsing error is encountered, throws a [ser_error](ser_error.md).
+    void read_to(json_visitor& visitor) override
+Feeds the current and succeeding [staj events](basic_staj_event.md) through the provided
+[visitor](basic_json_visitor.md), until the visitor indicates
+to stop. If a parsing error is encountered, throws a [ser_error](ser_error.md).
 
-    void read_to(json_content_handler& handler, std::error_code& ec) override
-Sends the parse events from the current event to the
-matching completion event to the supplied [handler](json_content_handler.md)
-E.g., if the current event is `begin_object`, sends the `begin_object`
-event and all inbetween events until the matching `end_object` event.
-If a parsing error is encountered, sets `ec`.
+    void read_to(json_visitor& visitor, std::error_code& ec) override
+Feeds the current and succeeding [staj events](basic_staj_event.md) through the provided
+[visitor](basic_json_visitor.md), until the visitor indicates
+to stop. If a parsing error is encountered, sets `ec`.
 
     void next() override;
 Advances to the next event. If a parsing error is encountered, throws a 
@@ -88,4 +93,17 @@ Advances to the next event. If a parsing error is encountered, sets `ec`.
     const ser_context& context() const override;
 Returns the current [context](ser_context.md)
 
+#### Non-member functions
+
+   template <class Src, class Allocator>
+   staj_filter_view operator|(basic_msgpack_cursor<Src,Allocator>& cursor, 
+                              std::function<bool(const staj_event&, const ser_context&)> pred);
+
+### See also
+
+[staj_event](../basic_staj_event.md)  
+
+[staj_array_iterator](../staj_array_iterator.md)  
+
+[staj_object_iterator](../staj_object_iterator.md)  
 

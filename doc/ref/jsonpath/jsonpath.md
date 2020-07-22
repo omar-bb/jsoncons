@@ -3,9 +3,20 @@
 The jsonpath extension implements [Stefan Goessner's JSONPath](http://goessner.net/articles/JsonPath/).
 It provides functions for search and "search and replace" using JSONPath expressions:
 
-[json_query](json_query.md)
-
-[json_replace](json_replace.md)
+<table border="0">
+  <tr>
+    <td><a href="json_query.md">json_query</a></td>
+    <td>Searches for all values that match a JSONPath expression</td> 
+  </tr>
+  <tr>
+    <td><a href="json_replace.md">json_replace</a></td>
+    <td>Search and replace using JSONPath expressions.</td> 
+  </tr>
+  <tr>
+    <td><a href="flatten.md">flatten<br>unflatten</a></td>
+    <td>Flattens a json object or array.</td> 
+  </tr>
+</table>
     
 ### Stefan Goessner's JSONPath
 
@@ -18,6 +29,8 @@ are good online evaluators for checking JSONPath expressions.
 ### jsoncons JSONPath
 
 The jsoncons implementation follows these [ABNF rules](jsoncons-jsonpath-abnf.md).
+
+Go to [JSONPath Comparison](https://cburgmer.github.io/json-path-comparison/) to see how jsoncons JsonPath compares with other implementations.
 
 #### Differences with Stefan Goessner's implementation
 
@@ -92,9 +105,48 @@ JSONPath|       Description
 `*` |   Wildcard. All objects/elements regardless their names.
 `[]`    |Subscript operator. 
 `[,]`   |Union.
-`[start:end:step]`      |Array slice operator borrowed from [ES4](http://wiki.ecmascript.org/doku.php?id=proposals:slice_syntax&s=array+slice).
+`[start:end:step]`      |Array slice operator borrowed from ECMASCRIPT 4.
 `()`    |Filter expression.
 `?()`   |Applies a filter expression.
+
+#### Slices
+
+jsoncons jsonpath slices have the same semantics as Python slices
+(including for negative steps since v0.153.3)
+
+The syntax for a slice is
+```
+[start:stop:step]
+```
+Each component is optional.
+
+- If `start` is omitted, it defaults to `0` if `step` is positive,
+or the end of the array if `step` is negative.
+
+- If `stop` is omitted, it defaults to the length of the array if `step` 
+is positive, or the beginning of the array if `step` is negative.
+
+- If `step` is omitted, it defaults to `1`.
+
+Slice expression|       Description
+--------|--------------------------------
+`[start:stop]`  | Items `start` through `stop-1`
+`[start:]`      | Items `start` to the end of the array
+`[:stop]`       | Items from the beginning of the array through `stop-1`
+`[:]`           | All items
+`[start:stop:step]`|Items `start` up to but not including `stop`, by `step` 
+
+A component `start`, `stop`, or `step` may be a negative number.
+
+Example | Description
+--------|------------
+$[-1]    | Last item 
+$[-2:]   | Last two items
+$[:-2]   | All items except the last two
+$[::-1]    | All items, reversed
+$[1::-1]   | First two items, reversed
+$[:-3:-1]  | Last two items, reversed
+$[-3::-1]  | All items except the last two, reversed
 
 #### Filter predicates
 
@@ -160,7 +212,7 @@ Function|Description|Result|Example
 
 ### Examples
 
-The examples below use the JSON text from [Stefan Goessner's JSONPath](http://goessner.net/articles/JsonPath/) (booklist.json).
+The examples below use the input JSON file `booklist.json`, from [Stefan Goessner's JSONPath](http://goessner.net/articles/JsonPath/).
 
 ```json
 { "store": {

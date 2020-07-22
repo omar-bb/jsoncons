@@ -4,6 +4,7 @@
 #include <jsoncons/json.hpp>
 #include <jsoncons/json_encoder.hpp>
 #include <jsoncons/json_reader.hpp>
+#include "sample_allocators.hpp"
 #include <catch/catch.hpp>
 #include <sstream>
 #include <vector>
@@ -15,11 +16,11 @@ using namespace jsoncons;
 void test_json_reader_error(const std::string& text, std::error_code ec)
 {
     REQUIRE_THROWS(json::parse(text));
-    try
+    JSONCONS_TRY
     {
         json::parse(text);
     }
-    catch (const ser_error& e)
+    JSONCONS_CATCH (const ser_error& e)
     {
         if (e.code() != ec)
         {
@@ -47,6 +48,48 @@ void test_json_reader_ec(const std::string& text, std::error_code expected)
     CHECK(ec);
     CHECK(ec == expected);
 }
+
+#if !(defined(__GNUC__))
+// gcc 4.8 basic_string doesn't satisfy C++11 allocator requirements
+TEST_CASE("json_reader constructors")
+{
+    std::string input = R"(
+{
+  "store": {
+    "book": [
+      {
+        "category": "reference",
+        "author": "Margaret Weis",
+        "title": "Dragonlance Series",
+        "price": 31.96
+      },
+      {
+        "category": "reference",
+        "author": "Brent Weeks",
+        "title": "Night Angel Trilogy",
+        "price": 14.70
+      }
+    ]
+  }
+}
+)";
+
+    SECTION("stateful allocator")
+    {
+        using my_json = basic_json<char,sorted_policy,FreelistAllocator<char>>;
+
+        FreelistAllocator<char> my_allocator{1}; 
+
+        json_decoder<my_json,FreelistAllocator<char>> decoder(result_allocator_arg, my_allocator,
+                                                              my_allocator);
+        basic_json_reader<char,stream_source<char>,FreelistAllocator<char>> reader(input, decoder, my_allocator);
+        reader.read();
+
+        my_json j = decoder.get_result();
+        //std::cout << pretty_print(j) << "\n";
+    }
+}
+#endif
 
 TEST_CASE("test_missing_separator")
 {
@@ -102,14 +145,14 @@ TEST_CASE("test_read_expected_colon")
     test_json_reader_error("{\"name\" []}", jsoncons::json_errc::expected_colon);
 }
 
-TEST_CASE("test_read_expected_name")
+TEST_CASE("test_read_expected_key")
 {
-    test_json_reader_error("{10}", jsoncons::json_errc::expected_name);
-    test_json_reader_error("{true}", jsoncons::json_errc::expected_name);
-    test_json_reader_error("{false}", jsoncons::json_errc::expected_name);
-    test_json_reader_error("{null}", jsoncons::json_errc::expected_name);
-    test_json_reader_error("{{}}", jsoncons::json_errc::expected_name);
-    test_json_reader_error("{[]}", jsoncons::json_errc::expected_name);
+    test_json_reader_error("{10}", jsoncons::json_errc::expected_key);
+    test_json_reader_error("{true}", jsoncons::json_errc::expected_key);
+    test_json_reader_error("{false}", jsoncons::json_errc::expected_key);
+    test_json_reader_error("{null}", jsoncons::json_errc::expected_key);
+    test_json_reader_error("{{}}", jsoncons::json_errc::expected_key);
+    test_json_reader_error("{[]}", jsoncons::json_errc::expected_key);
 }
 
 TEST_CASE("test_read_expected_value")

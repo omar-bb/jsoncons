@@ -54,16 +54,14 @@ Returns `true` if the json value is floating point and within the range of `doub
 (8) Same as `is<bool>()`.  
 Returns `true` if the json value is of boolean type, `false` otherwise.  
 
-(10) Same as `is<jsoncons::bignum>()`.  
+(10) Same as `is<jsoncons::bigint>()`.  
 Returns `true` if `is<int64_t>() || is<uint64_t>() is `true`, or if
 `is<std::string>()` is `true` and the string holds an integer value,
 otherwise `false`.
 
-(11) Same as `is<json::array>()`.  
-Returns `true` if the json value is an array, `false` otherwise.  
+(11) Returns `true` if the json value is an array, `false` otherwise.  
 
-(12) Same as `is<json::object>()`.  
-Returns `true` if the json value is an object, `false` otherwise.  
+(12) Returns `true` if the json value is an object, `false` otherwise.  
 
 ### Examples
 

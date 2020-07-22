@@ -15,51 +15,98 @@
 
 namespace jsoncons { namespace cbor {
 
-class cbor_decode_options
+class cbor_options;
+
+class cbor_options_common
 {
-public:
-    virtual ~cbor_decode_options() = default;
-};
+    friend class cbor_options;
 
-class cbor_encode_options
-{
-public:
-    virtual ~cbor_encode_options() = default;
+    int max_nesting_depth_;
+protected:
+    virtual ~cbor_options_common() = default;
 
-    virtual bool pack_strings() const = 0; 
-};
-
-class cbor_options : public virtual cbor_decode_options, 
-                     public virtual cbor_encode_options
-{
-private:
-    bool pack_strings_;
-public:
-
-    static const cbor_options& get_default_options()
-    {
-        static cbor_options options{};
-        return options;
-    }
-
-
-//  Constructors
-
-    cbor_options()
-        : pack_strings_(false)
+    cbor_options_common()
+        : max_nesting_depth_(1024)
     {
     }
 
-    bool pack_strings() const override
+    cbor_options_common(const cbor_options_common&) = default;
+    cbor_options_common& operator=(const cbor_options_common&) = default;
+    cbor_options_common(cbor_options_common&&) = default;
+    cbor_options_common& operator=(cbor_options_common&&) = default;
+public:
+    int max_nesting_depth() const 
     {
-        return pack_strings_;
+        return max_nesting_depth_;
+    }
+};
+
+class cbor_decode_options : public virtual cbor_options_common
+{
+    friend class cbor_options;
+public:
+    cbor_decode_options()
+    {
+    }
+};
+
+class cbor_encode_options : public virtual cbor_options_common
+{
+    friend class cbor_options;
+
+    bool use_stringref_;
+    bool use_typed_arrays_;
+public:
+    cbor_encode_options()
+        : use_stringref_(false),
+          use_typed_arrays_(false)
+    {
+    }
+
+    bool pack_strings() const 
+    {
+        return use_stringref_;
+    }
+
+    bool use_typed_arrays() const 
+    {
+        return use_typed_arrays_;
+    }
+};
+
+class cbor_options final : public cbor_decode_options, public cbor_encode_options
+{
+public:
+    using cbor_options_common::max_nesting_depth;
+    using cbor_encode_options::pack_strings;
+    using cbor_encode_options::use_typed_arrays;
+
+    cbor_options& max_nesting_depth(int value)
+    {
+        this->max_nesting_depth_ = value;
+        return *this;
     }
 
     cbor_options& pack_strings(bool value)
     {
-        pack_strings_ = value;
+        this->use_stringref_ = value;
         return *this;
     }
+
+    cbor_options& use_typed_arrays(bool value)
+    {
+        this->use_typed_arrays_ = value;
+        return *this;
+    }
+
+#if !defined(JSONCONS_NO_DEPRECATED)
+    JSONCONS_DEPRECATED_MSG("Instead, use use_typed_arrays(bool)")
+    cbor_options& enable_typed_arrays(bool value)
+    {
+        this->use_typed_arrays_ = value;
+        return *this;
+    }
+#endif
 };
 
 }}

@@ -7,38 +7,43 @@
 #include <map>
 #include <jsoncons/json.hpp>
 #include <jsoncons_ext/jsonpointer/jsonpointer.hpp>
-#include <jsoncons_ext/jsonpath/json_query.hpp>
+#include <jsoncons_ext/jsonpath/jsonpath.hpp>
 #include <fstream>
 
 using namespace jsoncons;
 
-void readme_examples();
+void array_examples();
 void basics_examples();
 void basics_wexamples();
-void json_filter_examples();
-void array_examples();
-void container_examples();
-void wjson_examples();
-void serialization_examples();
-void type_extensibility_examples();
-void type_extensibility_examples2();
-void ojson_examples();
-void unicode_examples();
-void run_csv_examples();
-void jsonpath_examples();
-void json_accessor_examples();
-void msgpack_examples();
-void jsonpointer_examples();
-void jsonpatch_examples();
-void run_cbor_examples();
-void run_ubjson_examples();
-void json_parser_examples();
-void byte_string_examples();
-void json_cursor_examples();
-void data_model_examples();
-void staj_iterator_examples();
 void bson_examples();
-void polymorphic_examples();
+void byte_string_examples();
+void container_examples();
+void data_model_examples();
+void jmespath_examples();
+void json_accessor_examples();
+void json_constructor_examples();
+void json_cursor_examples();
+void json_filter_examples();
+void json_parser_examples();
+void json_reader_examples();
+void json_traits_macros_examples();
+void json_traits_macros_named_examples();
+void jsonpatch_examples();
+void jsonpath_examples();
+void jsonpointer_examples();
+void msgpack_examples();
+void ojson_examples();
+void readme_examples();
+void run_cbor_examples();
+void run_cbor_typed_array_examples();
+void run_csv_examples();
+void run_ubjson_examples();
+void serialization_examples();
+void staj_iterator_examples();
+void type_extensibility_examples();
+void unicode_examples();
+void wjson_examples();
+void json_type_traits_variant_examples();
 
 void comment_example()
 {
@@ -77,7 +82,7 @@ void first_example_a()
     }
     json books = json::parse(is);
 
-    for (size_t i = 0; i < books.size(); ++i)
+    for (std::size_t i = 0; i < books.size(); ++i)
     {
         try
         {
@@ -105,14 +110,14 @@ void first_example_b()
     }
     json books = json::parse(is);
 
-    for (size_t i = 0; i < books.size(); ++i)
+    for (std::size_t i = 0; i < books.size(); ++i)
     {
         try
         {
             json& book = books[i];
             std::string author = book["author"].as<std::string>();
             std::string title = book["title"].as<std::string>();
-            std::string price = book.get_with_default("price", "N/A");
+            std::string price = book.get_value_or<std::string>("price", "N/A");
             std::cout << author << ", " << title << ", " << price << std::endl;
         }
         catch (const std::exception& e)
@@ -152,7 +157,7 @@ void first_example_c()
             std::string author = book["author"].as<std::string>();
             std::string title = book["title"].as<std::string>();
             std::string price;
-            book.get_with_default<json>("price", "N/A").dump(price,options);
+            book.get_value_or<json>("price", "N/A").dump(price,options);
             std::cout << author << ", " << title << ", " << price << std::endl;
         }
         catch (const ser_error& e)
@@ -177,7 +182,7 @@ void first_example_d()
     //options.floatfield(std::ios::fixed);
     options.precision(2);
 
-    for (size_t i = 0; i < books.size(); ++i)
+    for (std::size_t i = 0; i < books.size(); ++i)
     {
         try
         {
@@ -206,7 +211,7 @@ void second_example_a()
 {
     try
     {
-        json books = json::array();
+        json books(json_array_arg);
 
         {
             json book;
@@ -236,88 +241,6 @@ void second_example_a()
     catch (const std::exception& e)
     {
         std::cerr << e.what() << std::endl;
-    }
-}
-
-void json_constructor_examples()
-{   
-    json j1; // An empty object
-    std::cout << "(1) " << j1 << std::endl;
-
-    json j2 = json::object({{"baz", "qux"}, {"foo", "bar"}}); // An object 
-    std::cout << "(2) " << j2 << std::endl;
-
-    json j3 = json::array({"bar", "baz"}); // An array 
-    std::cout << "(3) " << j3 << std::endl;
-  
-    json j4(json::null()); // A null value
-    std::cout << "(4) " << j4 << std::endl;
-    
-    json j5(true); // A boolean value
-    std::cout << "(5) " << j5 << std::endl;
-
-    double x = 1.0/7.0;
-
-    json j6(x); // A double value
-    std::cout << "(6) " << j6 << std::endl;
-
-    json j8("Hello"); // A text string
-    std::cout << "(8) " << j8 << std::endl;
-
-    byte_string bs = {'H','e','l','l','o'};
-    json j9(bs); // A byte string
-    std::cout << "(9) " << j9 << std::endl;
-
-    std::vector<int> v = {10,20,30};
-    json j10 = v; // From a sequence container
-    std::cout << "(10) " << j10 << std::endl;
-
-    std::map<std::string, int> m{ {"one", 1}, {"two", 2}, {"three", 3} };
-    json j11 = m; // From an associative container
-    std::cout << "(11) " << j11 << std::endl;
-
-    // An object value with four members
-    json obj;
-    obj["first_name"] = "Jane";
-    obj["last_name"] = "Roe";
-    obj["events_attended"] = 10;
-    obj["accept_waiver_of_liability"] = true;
-
-    std::string first_name = obj["first_name"].as<std::string>();
-    std::string last_name = obj.at("last_name").as<std::string>();
-    int events_attended = obj["events_attended"].as<int>();
-    bool accept_waiver_of_liability = obj["accept_waiver_of_liability"].as<bool>();
-
-    // An array value with four elements
-    json arr = json::array();
-    arr.push_back(j1);
-    arr.push_back(j2);
-    arr.push_back(j3);
-    arr.push_back(j4);
-
-    json_options options;
-    std::cout << pretty_print(arr) << std::endl;
-}
-
-void mulitple_json_objects()
-{
-    std::ifstream is("./input/multiple-json-objects.json");
-    if (!is.is_open())
-    {
-        throw std::runtime_error("Cannot open file");
-    }
-
-    json_decoder<json> decoder;
-    json_reader reader(is, decoder);
-
-    while (!reader.eof())
-    {
-        reader.read_next();
-        if (!reader.eof())
-        {
-            json val = decoder.get_result();
-            std::cout << val << std::endl;
-        }
     }
 }
 
@@ -452,30 +375,17 @@ int main()
 
         second_example_a();
 
-        array_examples();
-        container_examples();
-
-        mulitple_json_objects();
-
         wjson_examples();
 
         unicode_examples();
 
         parse_error_example();
 
-        type_extensibility_examples2();
-
         json_filter_examples();
-
-        msgpack_examples();
 
         validation_example();
 
         comment_example();
-
-        json_constructor_examples();
-
-        jsonpatch_examples();
 
         max_nesting_path_example();
 
@@ -483,37 +393,61 @@ int main()
 
         json_parser_examples();
 
-        data_model_examples();
-
         staj_iterator_examples();
- 
-        bson_examples();
 
         serialization_examples();
 
-        jsonpointer_examples();
+        run_ubjson_examples();
+
+        type_extensibility_examples();
+
+        run_csv_examples();
 
         byte_string_examples();
 
+        json_constructor_examples();
+
+        container_examples();
+
+        json_accessor_examples();
+
+        jsonpatch_examples();
+
         jsonpath_examples();
 
-        polymorphic_examples();
+        jsonpointer_examples();
+
+        json_traits_macros_examples();
+
+        json_traits_macros_named_examples();
+
+        msgpack_examples();
+
+        readme_examples();
+
+        run_cbor_typed_array_examples();
+
+        run_cbor_examples();
+
+        data_model_examples();
 
         json_cursor_examples();
 
         json_accessor_examples();
 
-        json_accessor_examples();
-
-        run_ubjson_examples();
+        array_examples();
 
         run_cbor_examples();
 
-        readme_examples();
+        json_reader_examples();
 
-        type_extensibility_examples();
+        run_cbor_typed_array_examples();
 
-        run_csv_examples();
+        bson_examples();
+
+        jmespath_examples();
+
+        json_type_traits_variant_examples();
     }
     catch (const std::exception& e)
     {

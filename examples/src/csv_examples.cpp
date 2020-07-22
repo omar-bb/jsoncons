@@ -5,11 +5,120 @@
 #include <jsoncons_ext/csv/csv.hpp>
 #include <fstream>
 #include <iomanip>
-#include "example_types.hpp"
+#include <cassert>
+#include "sample_types.hpp"
 
 using namespace jsoncons;
 
-namespace csv_examples {
+namespace {
+
+void encode_n_objects()
+{
+    const std::string input = R"(
+[
+    {
+        "customer_name": "John Roe",
+        "has_coupon": true,
+        "phone_number": "0272561313",
+        "zip_code": "01001",
+        "sales_tax_rate": 0.05,
+        "total_amount": 431.65
+    },
+    {
+        "customer_name": "Jane Doe",
+        "has_coupon": false,
+        "phone_number": "416-272-2561",
+        "zip_code": "55416",
+        "sales_tax_rate": 0.15,
+        "total_amount": 480.7
+    },
+    {
+        "customer_name": "Joe Bloggs",
+        "has_coupon": false,
+        "phone_number": "4162722561",
+        "zip_code": "55416",
+        "sales_tax_rate": 0.15,
+        "total_amount": 300.7
+    },
+    {
+        "customer_name": "John Smith",
+        "has_coupon": false,
+        "phone_number": null,
+        "zip_code": "22313-1450",
+        "sales_tax_rate": 0.15,
+        "total_amount": 300.7
+    }
+]
+    )";
+
+    ojson j = ojson::parse(input);
+
+    std::string output;
+    csv::csv_options ioptions;
+    ioptions.quote_style(csv::quote_style_kind::nonnumeric);
+    csv::encode_csv(j, output, ioptions);
+    std::cout << output << "\n\n";
+
+    csv::csv_options ooptions;
+    ooptions.assume_header(true);
+    ojson other = csv::decode_csv<ojson>(output, ooptions);
+    assert(other == j);
+}
+
+void encode_n_rows()
+{
+    const std::string input = R"(
+[
+    ["customer_name","has_coupon","phone_number","zip_code","sales_tax_rate","total_amount"],
+    ["John Roe",true,"0272561313","01001",0.05,431.65],
+    ["Jane Doe",false,"416-272-2561","55416",0.15,480.7],
+    ["Joe Bloggs",false,"4162722561","55416",0.15,300.7],
+    ["John Smith",false,null,"22313-1450",0.15,300.7]
+]
+    )";
+
+    json j = json::parse(input);
+
+    std::string output;
+    csv::csv_options ioptions;
+    ioptions.quote_style(csv::quote_style_kind::nonnumeric);
+    csv::encode_csv(j, output, ioptions);
+    std::cout << output << "\n\n";
+
+    csv::csv_options ooptions;
+    ooptions.assume_header(true)
+            .mapping(csv::mapping_kind::n_rows);
+    json other = csv::decode_csv<json>(output, ooptions);
+    assert(other == j);
+}
+
+void encode_m_columns()
+{
+    const std::string input = R"(
+{
+    "customer_name": ["John Roe","Jane Doe","Joe Bloggs","John Smith"],
+    "has_coupon": [true,false,false,false],
+    "phone_number": ["0272561313","416-272-2561","4162722561",null],
+    "zip_code": ["01001","55416","55416","22313-1450"],
+    "sales_tax_rate": [0.05,0.15,0.15,0.15],
+    "total_amount": [431.65,480.7,300.7,300.7]
+}
+    )";
+
+    ojson j = ojson::parse(input);
+
+    std::string output;
+    csv::csv_options ioptions;
+    ioptions.quote_style(csv::quote_style_kind::nonnumeric);
+    csv::encode_csv(j, output, ioptions);
+    std::cout << output << "\n\n";
+
+    csv::csv_options ooptions;
+    ooptions.assume_header(true)
+            .mapping(csv::mapping_kind::m_columns);
+    ojson other = csv::decode_csv<ojson>(output, ooptions);
+    assert(other == j);
+}
 
 void csv_source_to_json_value()
 {
@@ -23,18 +132,18 @@ void csv_source_to_json_value()
     options.assume_header(true)
            .column_types("string,float,float,float,float");
 
-    // mapping_type::n_objects
-    options.mapping(csv::mapping_type::n_objects);
+    // mapping_kind::n_objects
+    options.mapping(csv::mapping_kind::n_objects);
     ojson j1 = csv::decode_csv<ojson>(s,options);
     std::cout << "\n(1)\n"<< pretty_print(j1) << "\n";
 
-    // mapping_type::n_rows
-    options.mapping(csv::mapping_type::n_rows);
+    // mapping_kind::n_rows
+    options.mapping(csv::mapping_kind::n_rows);
     ojson j2 = csv::decode_csv<ojson>(s,options);
     std::cout << "\n(2)\n"<< pretty_print(j2) << "\n";
 
-    // mapping_type::m_columns
-    options.mapping(csv::mapping_type::m_columns);
+    // mapping_kind::m_columns
+    options.mapping(csv::mapping_kind::m_columns);
     ojson j3 = csv::decode_csv<ojson>(s,options);
     std::cout << "\n(3)\n" << pretty_print(j3) << "\n";
 }
@@ -49,9 +158,9 @@ void csv_source_to_cpp_object()
 
     csv::csv_options ioptions;
     ioptions.header_lines(1)
-           .mapping(csv::mapping_type::n_rows);
+           .mapping(csv::mapping_kind::n_rows);
 
-    typedef std::vector<std::tuple<std::string,double,double,double,double>> table_type;
+    using table_type = std::vector<std::tuple<std::string,double,double,double,double>>;
 
     table_type table = csv::decode_csv<table_type>(input,ioptions);
 
@@ -125,7 +234,7 @@ void serialize_array_of_arrays_to_comma_delimited()
     countries.dump(encoder);
 }
 
-void serialize_to_tab_delimited_file()
+void encode_to_tab_delimited_file()
 {
     std::string in_file = "./input/employees.json";
     std::ifstream is(in_file);
@@ -333,18 +442,18 @@ void csv_parser_type_inference()
 {
     csv::csv_options options;
     options.assume_header(true)
-           .mapping(csv::mapping_type::n_objects);
+           .mapping(csv::mapping_kind::n_objects);
 
     std::ifstream is1("input/sales.csv");
     ojson j1 = csv::decode_csv<ojson>(is1,options);
     std::cout << "\n(1)\n"<< pretty_print(j1) << "\n";
 
-    options.mapping(csv::mapping_type::n_rows);
+    options.mapping(csv::mapping_kind::n_rows);
     std::ifstream is2("input/sales.csv");
     ojson j2 = csv::decode_csv<ojson>(is2,options);
     std::cout << "\n(2)\n"<< pretty_print(j2) << "\n";
 
-    options.mapping(csv::mapping_type::m_columns);
+    options.mapping(csv::mapping_kind::m_columns);
     std::ifstream is3("input/sales.csv");
     ojson j3 = csv::decode_csv<ojson>(is3,options);
     std::cout << "\n(3)\n"<< pretty_print(j3) << "\n";
@@ -374,7 +483,7 @@ NY,LON,TOR;LON
     std::cout << "(1)\n" << pretty_print(j1,print_options) << "\n\n";
 
     csv::csv_options options2;
-    options2.mapping(csv::mapping_type::n_rows)
+    options2.mapping(csv::mapping_kind::n_rows)
            .subfield_delimiter(';');
 
     json j2 = csv::decode_csv<json>(s,options2);
@@ -382,7 +491,7 @@ NY,LON,TOR;LON
 
     csv::csv_options options3;
     options3.assume_header(true)
-           .mapping(csv::mapping_type::m_columns)
+           .mapping(csv::mapping_kind::m_columns)
            .subfield_delimiter(';');
 
     json j3 = csv::decode_csv<json>(s,options3);
@@ -468,7 +577,7 @@ void as_a_stream_of_json_events()
             case staj_event_type::end_object:
                 std::cout << event.event_type() << " " << "\n";
                 break;
-            case staj_event_type::name:
+            case staj_event_type::key:
                 // Or std::string_view, if supported
                 std::cout << event.event_type() << ": " << event.get<jsoncons::string_view>() << "\n";
                 break;
@@ -492,7 +601,7 @@ void as_a_stream_of_json_events()
                 std::cout << event.event_type() << ": " << event.get<double>() << "\n";
                 break;
             default:
-                std::cout << "Unhandled event type: " << event.event_type() << " " << "\n";;
+                std::cout << "Unhandled event type: " << event.event_type() << " " << "\n";
                 break;
         }
     }
@@ -505,8 +614,9 @@ void grouped_into_basic_json_records()
 
     csv::csv_cursor cursor(data, options);
 
-    auto it = make_array_iterator<ojson>(cursor);
-    auto end = jsoncons::end(it);
+    auto view = staj_array<ojson>(cursor);
+    auto it = view.begin();
+    auto end = view.end();
 
     json_options print_options;
     print_options.float_format(float_chars_format::fixed);
@@ -519,56 +629,61 @@ void grouped_into_basic_json_records()
 
 void grouped_into_strongly_typed_records()
 {
-    typedef std::tuple<std::string,std::string,double> record_type;
+    using record_type = std::tuple<std::string,std::string,double>;
 
     csv::csv_options options;
     options.assume_header(true);
     csv::csv_cursor cursor(data, options);
 
-    auto it = make_array_iterator<record_type>(cursor);
+    auto view = staj_array<record_type>(cursor);
 
     std::cout << std::fixed << std::setprecision(7);
-    for (const auto& record : it)
+    for (const auto& record : view)
     {
         std::cout << std::get<0>(record) << ", " << std::get<1>(record) << ", " << std::get<2>(record) << "\n";
     }
 }
 
-
-} // csv_examples
+} // namespace
 
 void run_csv_examples()
 {
     std::cout << "\nCSV examples\n\n";
-    csv_examples::read_write_csv_tasks();
-    csv_examples::serialize_to_tab_delimited_file();
-    csv_examples::serialize_array_of_arrays_to_comma_delimited();
-    csv_examples::serialize_books_to_csv_file();
-    csv_examples::serialize_books_to_csv_file_with_reorder();
-    csv_examples::last_column_repeats();
-    csv_examples::last_two_columns_repeat();
-    csv_examples::decode_csv_string();
-    csv_examples::decode_csv_stream();
-    csv_examples::encode_csv_file_from_books();
-    csv_examples::decode_encode_csv_tasks();
+    read_write_csv_tasks();
+    encode_to_tab_delimited_file();
+    serialize_array_of_arrays_to_comma_delimited();
+    serialize_books_to_csv_file();
+    serialize_books_to_csv_file_with_reorder();
+    last_column_repeats();
+    last_two_columns_repeat();
+    decode_csv_string();
+    decode_csv_stream();
+    encode_csv_file_from_books();
+    decode_encode_csv_tasks();
 
-    csv_examples::csv_decode_without_type_inference();
-    csv_examples::csv_parser_type_inference();
+    csv_decode_without_type_inference();
+    csv_parser_type_inference();
 
-    csv_examples::decode_csv_with_subfields();
-    csv_examples::csv_source_to_json_value();
-    csv_examples::csv_source_to_cpp_object();
+    decode_csv_with_subfields();
+    csv_source_to_json_value();
+    csv_source_to_cpp_object();
 
     std::cout << "\n";
-    csv_examples::as_a_variant_like_structure();
+    as_a_variant_like_structure();
     std::cout << "\n";
-    csv_examples::as_a_strongly_typed_cpp_structure();
+    as_a_strongly_typed_cpp_structure();
     std::cout << "\n";
-    csv_examples::as_a_stream_of_json_events();
+    as_a_stream_of_json_events();
     std::cout << "\n";
-    csv_examples::grouped_into_basic_json_records();
+    grouped_into_basic_json_records();
     std::cout << "\n";
-    csv_examples::grouped_into_strongly_typed_records();
+    grouped_into_strongly_typed_records();
+    std::cout << "\n";
+    encode_n_objects();
+    std::cout << "\n";
+    encode_n_rows();
+    std::cout << "\n";
+    encode_m_columns();
     std::cout << "\n";
 
     std::cout << std::endl;

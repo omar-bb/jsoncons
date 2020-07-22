@@ -1,3 +1,788 @@
+v0.155.0
+--------
+
+Changes:
+
+- The `semantic_tag` enum value `timestamp` has been deprecated 
+(still works) and renamed to `epoch_time`.
+
+Enhancements:
+
+- Added `json_type_traits` support for `std::chrono::duration`
+
+v0.154.3
+--------
+
+Bugs fixed:
+
+- Fixed g++ compile issue with -Wnoexcept compiler flag, [\260](https://github.com/danielaparker/jsoncons/issues/260)
+
+- Fixed issue with creating a patch to remove array elements using `json_patch::from_diff`, 
+[\#261](https://github.com/danielaparker/jsoncons/issues/261)
+
+- Fixed memory leak issue introduced in v0.154.2
+
+v0.154.2
+--------
+
+Withdrawn
+
+v0.154.1
+--------
+
+Bugs fixed:
+
+- Fixed issue with encode_cbor overload for user type input and output stream, 
+[\#259](https://github.com/danielaparker/jsoncons/issues/259)
+
+v0.154.0
+--------
+
+Bugs fixed:
+
+- Fixed issue with escaping special characters in the `jsonpath::flatten` function [\#255](https://github.com/danielaparker/jsoncons/issues/255)
+- Added workaround for clang xcode 10 bug in `std::optional` implementation
+- Fixed bug in `basic_json` less operator with left hand side `uint64_value` and right hand side `int64_value`
+
+Changes:
+
+- The function name `jsonpointer::insert_or_assign` has been deprecated and renamed to `jsonpointer::add`.
+Rationale: consistency with JSON Patch names.
+ 
+- Until v0.154.0, the `position()` member function of `ser_context` was defined for JSON 
+name and string events only, and indicated the position of the first character of the 
+name or string in the input. Since v0.154.0, the `position()` member function of `ser_context` 
+is defined for all JSON parse events, and indicates the position of the character at the beginning
+of the event, e.g. '[' for an array, '{' for an object, and '"' for a string. 
+[\#256](https://github.com/danielaparker/jsoncons/issues/256)
+
+Enhancements
+
+- Added jmespath extension for [JMESPath](https://jmespath.org/) support, [\#204](https://github.com/danielaparker/jsoncons/issues/204)
+- Added `json_type_traits` support for `std::variant`, [\#257](https://github.com/danielaparker/jsoncons/issues/257)
+
+v0.153.3
+--------
+
+Bug fixes:
+
+- Fixed a bug in jsonpath array slice when the step component is negative
+and the start and stop components are omitted, [\#252](https://github.com/danielaparker/jsoncons/issues/252).
+jsoncons jsonpath slices now have the same semantics as Python slices
+including for negative steps.
+
+- Fixed a bug in jsonpath line/column error reporting when using functions.
+
+v0.153.2
+--------
+
+Bug fixes:
+
+- Fixed a bug in jsonpath array slice when the end argument is negative, [\#250](https://github.com/danielaparker/jsoncons/issues/250)
+
+Platform:
+
+- Support for QNX Neutrino (thanks to Oleh Derevenko for [\#244](https://github.com/danielaparker/jsoncons/issues/244) 
+and [\#245](https://github.com/danielaparker/jsoncons/pull/248)) 
+  
+
+v0.153.1
+--------
+
+Bug fixes for BSON:
+
+- Fixed int32 encoding error in the BSON encoder [\#243](https://github.com/danielaparker/jsoncons/issues/243)
+- Fixed issue with default binary subtype when not specified, was 0, now 0x80 (user defined.)
+
+v0.153.0
+--------
+
+Bug fixes:
+
+- Fixed decode issue with `json_type_traits` defined for `set`, `unordered_set`, `multiset`, 
+`unordered_multiset` and `forward_list` [\#242](https://github.com/danielaparker/jsoncons/issues/242)
+
+- Fixed issue with preserving original CBOR semantic tag for CBOR byte strings  
+associated with an unknown (to jsoncons) tag.
+
+Enhancements:
+
+- `basic_json::parse`, `decode_json`, `decode_csv`, `decode_bson`, `decode_cbor`,
+`decode_msgpack`, and `decode_ubjson` now support reading data from a pair of 
+LegacyInputIterators that specify a character or byte sequence.
+
+- `byte_string_view` now has an explicit constructor that allows any contiguous
+byte sequence container. 
+
+v0.152.0
+--------
+
+Bug fixes:
+
+- Fixed compile error when building with Android SDK level less than 21 [\#240](https://github.com/danielaparker/jsoncons/pull/240)
+
+- Fixed bson encode/decode of binary type (wasn't reading/writing subtype.)
+
+Changes:
+
+- `basic_json_compressed_encoder` has been deprecated and renamed to
+`basic_compact_json_encoder`. Rationale: consistency with other names.
+The typedefs `json_compressed_stream_encoder`, `wjson_compressed_stream_encoder`,
+`json_compressed_string_encoder`, and `wjson_compressed_string_encoder` have
+been deprecated and renamed to `compact_json_stream_encoder`, 
+`compact_wjson_stream_encoder`, `compact_json_string_encoder`, and
+`compact_wjson_string_encoder`. 
+
+- The factory function `make_array_iterator()` has been replaced by `staj_array()`.
+
+- The factory function `make_object_iterator()` has been replaced by `staj_object()`.
+
+- The constructors for `json_cursor`, `csv_cursor`, `bson_cursor`, `cbor_cursor`, `msgpack_cursor`, and `ubjson_cursor`
+that take a filter argument have been deprecated. Instead filters may be applied to a cursor using the pipe syntax, e.g.
+
+    json_cursor cursor(is);
+    auto filtered_c = cursor | filter1 | filter2;
+
+Enhancements:
+
+- Generalized `basic_json(byte_string_arg_t, ...` constructor to accomodate any contiguous byte sequence container,
+which is a contiguous container that has member functions `data()` and `size()`, and member type `value_type` with size exactly 8 bits.
+Any of the values types `int8_t`, `uint8_t`, `char`, `unsigned char` and `std::byte` (since C++17) are allowed.
+
+- Generalized the functions `decode_bson`, `decode_cbor`, `decode_msgpack` and `decode_ubjson`
+to read from any contiguous byte sequence.
+
+- Generalized the `json_visitor` member function `byte_string_value`
+to accept any contiguous byte sequence argument. In particular this means that `byte_string_value`
+can be called on an encoder with any bytes sequence argument.
+
+- Generalized the functions `encode_bson`, `encode_cbor`, `encode_msgpack` and `encode_ubjson`
+to write to any back insertable byte container.
+Any of the values types `int8_t`, `uint8_t`, `char`, `unsigned char` and `std::byte` (since C++17) are allowed.
+
+- Generalized the `json_type_traits` for maps to accomodate all key types 
+that themselves have json_type_traits defined [\#241](https://github.com/danielaparker/jsoncons/issues/241)
+
+- Unknown CBOR tags preceding a byte string (unknown to jsoncons), 
+MessagePack types associated with the MessagePack ext family,
+and bson binary subtypes associated with a binary value are now captured. 
+
+- If in `basic_json` `tag()` == `semantic_tag::ext`, the function `ext_tag()` will return a format 
+specific tag associated with a byte string value. 
+
+- The `basic_json` constructor with parameter `byte_string_arg_t` now allows constructing a byte string
+associated with a format specific tag.  
+
+v0.151.1
+--------
+
+Bug fixes:
+
+- Fixed `jsoncons::semantic_tag::uri`, `jsoncons::semantic_tag::base64` and `jsoncons::semantic_tag::base64url`
+applied to text strings incorrectly encoded into CBOR [\238](https://github.com/danielaparker/jsoncons/issues/238)
+
+v0.151.0
+--------
+
+Bug fixes:
+
+- Fixed eternal loop in csv parser [\#220](https://github.com/danielaparker/jsoncons/issues/220)
+
+- Fixed JSONPath issue with filter expressions containing regular expressions [\#233](https://github.com/danielaparker/jsoncons/issues/233)
+
+- Fixed OSS-Fuzz failed throw issue in CSV parser [\#232](https://github.com/danielaparker/jsoncons/issues/232)
+
+- Fixed OSS-Fuzz integer-overflow issue in CSV parser [\#231](https://github.com/danielaparker/jsoncons/issues/231)
+
+- Fixed OSS-Fuzz timeout issues [\#230](https://github.com/danielaparker/jsoncons/issues/230)
+
+- Fixed UBJSON issue parsing arrays with end markers [\#229](https://github.com/danielaparker/jsoncons/issues/229)
+
+- Fixed OSS-Fuzz memory allocation issues [\#228](https://github.com/danielaparker/jsoncons/issues/228)
+
+- Fixed OSS-Fuzz stack overflow issues [\#225](https://github.com/danielaparker/jsoncons/issues/225)
+
+- OSS-Fuzz failed throw issue in CBOR parser [\#235](https://github.com/danielaparker/jsoncons/issues/235)
+
+- Msg pack bin8 wrong format [\#237](https://github.com/danielaparker/jsoncons/issues/237)
+
+Changes:
+
+- The cbor_option name `enable_typed_arrays` has been deprecated and
+renamed to `use_typed_arrays`. 
+
+- `jsonpointer::unflatten_method` has been deprecated and replaced with `jsonpointer::unflatten_options`.
+
+- The cursor functions named `read` have been deprecated and renamed to `read_to`.
+
+Enhancements:
+
+- Added classes bson_options, msgpack_options, and ubjson_options
+
+- Until this release, only JSON parsing supported a `max_nesting_depth` option. Since this release,
+JSON, BSON, CBOR, MessagePack and UBJSON all support a `max_nesting_depth` option for both
+parsing and serializing. The default is 1024.
+
+- UBJSON supports a `max_items` option for parsing and serializing. The default is 16,777,216.
+
+v0.150.0
+--------
+
+Defects fixed:
+
+- Fixed jsonpath issue [Union with spaces](https://cburgmer.github.io/json-path-comparison/results/union_with_spaces.html)
+
+- Fixed jsonpath issue [Bracket notation with empty string](https://cburgmer.github.io/json-path-comparison/results/bracket_notation_with_empty_string.html)
+
+- Fixed jsonpath issue [Bracket notation with empty string doubled quoted](https://cburgmer.github.io/json-path-comparison/results/bracket_notation_with_empty_string_doubled_quoted.html)
+
+Changes:
+
+- The names `basic_json_content_handler` and `basic_default_json_content_handler`
+have been deprecated and renamed to `basic_json_visitor` and `basic_default_json_visitor`.
+The private visitor functions `do_xxx` have been renamed to `visit_xxx`.
+This change should be transparent to most users. 
+
+- The name `staj_event_type::name` has been deprecated and renamed to
+`staj_event_type::key`. Rationale: consistency with other names. The old
+name is still supported.
+
+- The class `null_ser_context` has been deprecated. For defaults, `ser_context()` 
+is now used in place of `null_ser_context()`.
+
+Enhancements:
+
+- Added jsonpointer `unflatten` function
+
+v0.149.0
+--------
+
+Defects fixed:
+
+- Fixed vs issue (since v0.148.0) with basic_json constructor disambiguation with 
+a combination of type tag and `std::initializer_list` arguments.
+
+Non-breaking change:
+
+- For consistency with naming conventions across `json_type_traits` convenience macros,
+macro names containing `GETTER_CTOR` now contain `CTOR_GETTER`, e.g. 
+`JSONCONS_ALL_GETTER_CTOR_NAME_TRAITS` is now `JSONCONS_ALL_CTOR_GETTER_NAME_TRAITS`.
+The old names are still supported.
+
+Enhancements:
+
+- Added jsonpath functions `flatten` and `unflatten` that flatten a json object or array 
+to a single depth object of key-value pairs, and unflatten that object back to the original json.
+
+v0.148.0
+--------
+
+Changes:
+
+- The `json_type_traits` convenience macro names ending in `NAMED_TRAITS` 
+  have been deprecated and now end in `NAME_TRAITS`, e.g. the old name 
+  `JSONCONS_ALL_GETTER_SETTER_NAMED_TRAITS` is now `JSONCONS_ALL_GETTER_SETTER_NAME_TRAITS`. 
+  Rationale: name consistency.
+
+- Fixed some deprecated `json_type_traits` convenience macro names. All
+  of the convenience macro names that have ever been deprecated should work.
+
+Enhancements:
+
+- Added overload with leading `temp_allocator_arg_t` parameter to `encode_json`, `encode_bson`, `encode_csv`,
+`encode_cbor`, `encode_msgpack` and `encode_ubjson`, which allows the user to supply a custom allocator 
+that serialization will use for temporary work areas.
+
+v0.147.0
+--------
+
+Fixed bugs:
+
+- Fixed an issue with the `jsonpatch_error` class implementation of `what()`, likely related to
+  [issue #212 ](https://github.com/danielaparker/jsoncons/issues/212)
+
+Enhancements:
+
+- Added support to the convenience macros `JSONCONS_N_GETTER_CTOR_TRAITS` and `JSONCONS_ALL_GETTER_CTOR_NAMED_TRAITS` 
+  for-non mandatory members to be omitted altogether from the serialized JSON. These macros had been overlooked
+  when this feature was added to the `_N_` macros in v0.146.0.
+
+- Added jsonpointer function `flatten` to flatten a json object or array into a single depth object of JSONPointer-value pairs.
+
+- Added overload with leading `temp_allocator_arg_t` parameter to `decode_json`, `decode_bson`, `decode_csv`,
+`decode_cbor`, `decode_msgpack` and `decode_ubjson`, which allows the user to supply a custom allocator 
+that deserialization will use for temporary work areas.
+
+v0.146.1
+--------
+
+Fixed issue with `json_type_traits` specializations of `std::shared_ptr<T>` and 
+`std::unique_ptr<T>` when converting from JSON null.
+
+v0.146.0
+--------
+
+Changes:
+
+- The name `rename_object_member_filter` has been deprecated and renamed to 
+`rename_object_key_filter`
+
+- The `json_content_handler` public function `name` has been deprecated and renamed to `key`.
+Rationale: in the future we'll likely support overloads for non-string keys for binary formats
+
+- The `json_content_handler` private virtual function `do_name` has been removed and replaced with `do_key`.
+Rationale: in the future we'll likely support overloads for non-string keys for binary formats
+  
+Enhancements:
+ 
+-  New json_type_traits specialization for `std::shared_ptr<T>` for `T` that is not a polymorphic class,
+i.e., does not have any virtual functions 
+
+-  New json_type_traits specialization for `std::unique_ptr<T>` for `T` that is not a polymorphic class  
+
+- For the `_N_` convenience macros that allow some non-mandatory members, the generated 
+traits `to_json` function will exclude altogether empty values for `std::shared_ptr` 
+and `std::unique_ptr` non-mandatory members, as they do currently for `std::optional`.
+
+v0.145.2
+--------
+
+Defect fixes:
+
+- Fixed issue with `json_type_traits` specialization for optional 
+
+v0.145.1
+--------
+
+Bug fixes:
+
+- Fixed issue with jsoncons::optional
+
+v0.145.0
+--------
+
+Bug fixes:
+
+- Fixed [compiler warning with clang](https://github.com/danielaparker/jsoncons/issues/214)
+ 
+- Fixed [Missing return in typed_array](https://github.com/danielaparker/jsoncons/issues/213) 
+
+Name changes:
+
+- The `json_type_traits` convenience macro names ending in `_DECL` have been shortened 
+  by dropping the `_DECL` suffix, e.g. the old name `JSONCONS_N_MEMBER_TRAITS_DECL` is now
+  `JSONCONS_N_MEMBER_TRAITS`. The old names are still supported.
+
+Enhancements:
+
+- Includes `json_type_traits` specialization for `std::optional` if C++ 17. `nullopt` values
+are mapped to JSON null values. 
+
+- When encoding to JSON, the `json_type_traits` convenience macros will exlude altogether a non-mandatory 
+`std::optional` `nullopt` value from the JSON output.
+
+v0.144.0
+--------
+
+Bug fixes:
+
+Fixed issue [json with preserve_order_policy does not preserve order of elements #210](https://github.com/danielaparker/jsoncons/issues/210)
+
+Implemented feature requests:
+
+- [208](https://github.com/danielaparker/jsoncons/issues/208) Added member function to `basic_json`
+```
+template <class T>
+T as(byte_string_arg_t, semantic_tag hint) const; 
+```
+
+v0.143.2
+--------
+
+Bug fix:
+
+- Fixed bug in destructor of `typed_array` class
+
+Enhancement:
+
+- Improved performance of decoding CBOR typed arrays
+
+v0.143.1
+--------
+
+Bug fix:
+
+- v0.143.1 fixs a bug in the jsonpath filter < comparison operator that was introduced in v0.143.0 
+
+Enhancements:
+
+- `j.as<int>()`, `j.as<uint64_t>()` etc. supported for binary, octal and hex string values,
+in addition to decimal string values.
+ 
+- Includes `json_type_traits` specialization for integer keyed maps, with conversion 
+to/from string keys in a `basic_json`. 
+
+- The `json_type_traits` specializations for type `T` generated by the convenience macros now include a specialization of
+`is_json_type_traits_declared<T>` with member constant `value` equal `true`.
+
+- New `basic_json` member function `json_type type()`
+
+- New `basic_json` member function `get_value_or` that gets a value as type `T` if available, 
+or a default value if not: 
+
+    template <class T,class U>
+    T get_value_or(const string_view_type& name, U&& default_value) const; 
+
+`get_value_or` is the preferred alternative to
+
+    template<class T>
+    T get_with_default(const string_view_type& name, const T& default_value) const
+
+Note that `get_value_or` requires that the first template parameter `T` be specified explicitly (unlike `get_with_default`)
+
+Changes:
+
+- The basic_json `get_with_default(name)` function, which returned a const reference 
+to the value if available and to a json null constant if not,
+has been deprecated and renamed to `at_or_null(name)`. Rationale: `get_with_default(name)`
+is more like `at(name)` (both return a const reference) than 
+`get_with_default(name,default_value)` (which returns a value.) 
+
+- The tag type `bstr_arg_t` has been renamed to `byte_string_arg_t`, and the constant 
+`bstr_arg` to `byte_string_arg`.
+
+- The `cbor_content_handler` public member functions `typed_array()` and private virtual functions 
+`do_typed_array()` have been moved to `basic_json_content_handler`. The `do_typed_array()`
+private virtual functions have been given default implementations. `cbor_content_handler`
+has been deprecated.
+ 
+- Replaced Martin Moene's span-lite with simpler implementation until `std::span` is available
+(primarily for typed array interface.)  
+
+v0.142.0
+--------
+
+Defect fixes:
+
+- Fixed csv documentation showing the wrong header file includes 
+- Fixed jsonpath issue [json_query() is reordering arrays](https://github.com/danielaparker/jsoncons/issues/200)
+- Fixed jsonpath issue with recursive descent reported in 
+[Alignment on JSONPath implementations across languages](https://github.com/danielaparker/jsoncons/issues/199)
+
+v0.141.0
+--------
+
+Name change:
+
+- The names `JSONCONS_ALL_PROPERTY_TRAITS_DECL`, `JSONCONS_N_PROPERTY_TRAITS_DECL`,
+`JSONCONS_TPL_ALL_PROPERTY_TRAITS_DECL` and `JSONCONS_N_PROPERTY_TRAITS_DECL`  
+have been deprecated and renamed to `JSONCONS_ALL_GETTER_SETTER_TRAITS_DECL`, 
+`JSONCONS_N_GETTER_SETTER_TRAITS_DECL`,`JSONCONS_TPL_ALL_GETTER_SETTER_TRAITS_DECL` 
+and `JSONCONS_TPL_N_GETTER_SETTER_TRAITS_DECL`. Rationale: naming consistency.  
+
+Enhancements:
+
+- New tag types `json_object_arg_t`, `json_array_arg_t` and `bstr_arg_t`
+have been introduced that make it simpler to construct `basic_json` values
+of objects, arrays and byte strings.
+
+v0.140.0
+--------
+
+Changes to the `json_type_traits` convenience macros:
+
+- In [Issue 190](https://github.com/danielaparker/jsoncons/issues/190), Twan Springeling 
+raised an issue with the macro `JSONCONS_GETTER_CTOR_TRAITS_DECL`, that it did not come
+with "strict" and "non-strict" versions. In this release we introduce new macros, where
+`_N_` is mnemonic for the number of mandatory properties provided (possibly zero), and _ALL_ is 
+mnemonic for all properties are mandatory:
+   
+```c++
+JSONCONS_N_GETTER_CTOR_TRAITS_DECL(class_name,num_mandatory_params,
+                                   getter_name0,
+                                   getter_name1,...) // (11)
+
+JSONCONS_ALL_GETTER_CTOR_TRAITS_DECL(class_name,
+                                     getter_name0,getter_name1,...) // (12)
+
+JSONCONS_TPL_N_GETTER_CTOR_TRAITS_DECL(num_template_params,
+                                       class_name,num_mandatory_params,
+                                       getter_name0,getter_name1,...) // (13)
+
+JSONCONS_TPL_ALL_GETTER_CTOR_TRAITS_DECL(num_template_params,
+                                         class_name,
+                                         getter_name0,getter_name1,...) // (14)
+
+JSONCONS_N_GETTER_CTOR_NAMED_TRAITS_DECL(class_name,num_mandatory_params,
+                                         (getter_name0,"name0"),
+                                         (getter_name1,"name1")...) // (15)
+
+JSONCONS_ALL_GETTER_CTOR_NAMED_TRAITS_DECL(class_name,
+                                          (getter_name0,"name0"),
+                                          (getter_name1,"name1")...) // (16)
+
+JSONCONS_TPL_N_GETTER_CTOR_NAMED_TRAITS_DECL(num_template_params,
+                                             class_name,num_mandatory_params,
+                                             (getter_name0,"name0"),
+                                             (getter_name1,"name1")...) // (17)
+
+JSONCONS_TPL_ALL_GETTER_CTOR_NAMED_TRAITS_DECL(num_template_params,
+                                               class_name,
+                                               (getter_name0,"name0"),
+                                               (getter_name1,"name1")...) // (18)
+```   
+- When the traits generated by e.g. `JSONCONS_N_GETTER_CTOR_TRAITS_DECL` need to pass an argument to a
+constructor that is not present in the JSON, they pass a default constructed parameter value.
+The legacy macros e.g. `JSONCONS_GETTER_CTOR_TRAITS_DECL` remain, and have the same meaning as before, but are deprecated. 
+
+- With the introduction of the `JSONCONS_POLYMORPHIC_TRAITS_DECL` macro,
+and the support for polymorhic types, there comes a problem with the "non-strict" macros
+JSONCONS_MEMBER_TRAITS_DECL, JSONCONS_PROPERTY_TRAITS_DECL, JSONCONS_SETTER_GETTER_TRAITS_DECL, etc.,
+when a class has non-mandatory properties. Type selection is based on the presence of properties,
+but the `json_type_traits` generated by the non-strict macros don't know which properties are mandatory 
+and which non-mandatory, hence type selection becomes impossible when members are absent in
+the JSON. For this reason, twelve new `_N_` macros have been introduced to allow you to specify which properties
+are mandatory (`_N_` is mnemonic for number of mandatory properties):
+ 
+```c++
+JSONCONS_N_MEMBER_TRAITS_DECL(class_name,num_mandatory_params,
+                              member_name0,member_name1,...)
+
+JSONCONS_TPL_N_MEMBER_TRAITS_DECL(num_template_params,
+                                  class_name,num_mandatory_params,
+                                  member_name0,member_name1,...)
+
+JSONCONS_N_MEMBER_NAMED_TRAITS_DECL(class_name,num_mandatory_params,
+                                    (member_name0,"name0"),
+                                    (member_name1,"name1")...)
+
+JSONCONS_TPL_N_MEMBER_NAMED_TRAITS_DECL(num_template_params,
+                                        class_name,num_mandatory_params,
+                                        (member_name0,"name0"),
+                                        (member_name1,"name1")...)
+
+JSONCONS_N_GETTER_CTOR_TRAITS_DECL(class_name,num_mandatory_params,
+                                   getter_name0,
+                                   getter_name1,...)
+
+JSONCONS_TPL_N_GETTER_CTOR_TRAITS_DECL(num_template_params,
+                                       class_name,num_mandatory_params,
+                                       getter_name0,getter_name1,...)
+
+JSONCONS_N_GETTER_CTOR_NAMED_TRAITS_DECL(class_name,num_mandatory_params,
+                                         (getter_name0,"name0"),
+                                         (getter_name1,"name1")...)
+
+JSONCONS_TPL_N_GETTER_CTOR_NAMED_TRAITS_DECL(num_template_params,
+                                             class_name,num_mandatory_params,
+                                             (getter_name0,"name0"),
+                                             (getter_name1,"name1")...)
+
+JSONCONS_N_PROPERTY_TRAITS_DECL(class_name,get_prefix,set_prefix,num_mandatory_params,
+                                property_name0,property_name1,...)
+
+JSONCONS_TPL_N_PROPERTY_TRAITS_DECL(num_template_params,
+                                    class_name,get_prefix,set_prefix,num_mandatory_params,
+                                    property_name0,property_name1,...)
+
+JSONCONS_N_GETTER_SETTER_NAMED_TRAITS_DECL(class_name,num_mandatory_params,
+                                          (getter_name0,setter_name0,"name0"),
+                                          (getter_name1,setter_name1,"name1")...)
+
+JSONCONS_TPL_N_GETTER_SETTER_NAMED_TRAITS_DECL(num_template_params,
+                                               class_name,num_mandatory_params,
+                                               (getter_name0,setter_name0,"name0"),
+                                               (getter_name1,setter_name1,"name1")...)
+``` 
+- The legacy non-strict macros remain, and have the same meaning as before, but are deprecated. 
+ 
+- For consistency with the new naming, and to allow the legacy `JSONCONS_GETTER_CTOR_TRAITS_DECL` to
+keep the same meaning for backwards compatibility, the `_STRICT_` names are deprecated 
+and renamed substituting `_ALL_` for `STRICT`.
+
+See [json_type_traits](https://github.com/danielaparker/jsoncons/blob/master/doc/ref/json_type_traits.md)
+for complete documentation of the convenience macros. 
+
+v0.139.0
+--------
+
+Enhancements:
+
+- New convenience macro for generating `json_type_traits` from getter and setter functions
+that will serialize to the stringified property names,
+```c++
+JSONCONS_PROPERTY_TRAITS_DECL(class_name,get_prefix,set_prefix,
+                              property_name0,property_name1,...) 
+
+JSONCONS_STRICT_PROPERTY_TRAITS_DECL(class_name,get_prefix,set_prefix,
+                                     property_name0,property_name1,...) 
+
+JSONCONS_TPL_PROPERTY_TRAITS_DECL(num_template_params,
+                                  class_name,get_prefix,set_prefix,
+                                  property_name0,property_name1,...)   
+
+JSONCONS_TPL_STRICT_PROPERTY_TRAITS_DECL(num_template_params,
+                                         class_name,get_prefix,set_prefix,
+                                         property_name0,property_name1,...) 
+```
+
+- `JSONCONS_POLYMORPHIC_TRAITS_DECL` now specializes `json_type_traits`
+for `std::unique_ptr<base_class>` in addition to `std::shared_ptr<base_class>`. 
+
+v0.138.0
+--------
+
+Defect fix:
+
+- Fixes issue in `csv_parser` parsing a CSV file with `mapping_kind::m_columns`,
+  when parsing a quoted string containing a numeric value, processing it as a
+  number rather than as a string.  
+
+Changes:
+
+- It is no longer neccessay to place a semicolon after `JSONCONS_TYPE_TRAITS_FRIEND` 
+
+Enhancements:
+
+- New convenience macro for generating `json_type_traits` for polymorphic types,
+based on the presence of properties,
+```c++
+JSONCONS_POLYMORPHIC_TRAITS_DECL(base_class_name,derived_class_name0,derived_class_name1,...) 
+```
+
+- The convenience macros `JSONCONS_MEMBER_TRAITS_DECL`, `JSONCONS_STRICT_MEMBER_TRAITS_DECL`,
+`JSONCONS_TPL_MEMBER_TRAITS_DECL`, `JSONCONS_TPL_STRICT_MEMBER_TRAITS_DECL`,
+`JSONCONS_MEMBER_TRAITS_NAMED_DECL`, `JSONCONS_STRICT_MEMBER_TRAITS_NAMED_DECL`,
+`JSONCONS_TPL_MEMBER_TRAITS_NAMED_DECL`, and `JSONCONS_TPL_STRICT_MEMBER_TRAITS_NAMED_DECL`
+now allow you to have `const` or `static const` data members that are serialized.
+
+- `basic_csv_encoder` now supports json values that map to multi-valued fields and
+json objects where each member is a name-array pair.  
+
+- `basic_csv_parser` and `basic_csv_encoder` now support nan, infinity,
+and minus infinity substitution
+
+Deprecated `basic_csv_options` functions removed:
+
+- basic_csv_options& column_names(const std::vector<string_type>&)
+- basic_csv_options& column_defaults(const std::vector<string_type>& value)
+- column_types(const std::vector<string_type>& value)
+(Instead, use the versions that take comma-delimited strings)
+
+v0.137.0
+--------
+
+Defect fixes:
+
+- Fixes GCC 9.2 warning: ‘class jsoncons::json_exception’ 
+  has virtual functions and accessible non-virtual destructor,
+  contributed by KonstantinPlotnikov.
+    
+Enhancements:
+
+- Includes Martin Moene's span-lite to support a C++20-like span in the jsoncons namespace.  
+
+- Includes enhancements to the CBOR encode and decode classes and functions to support the 
+  CBOR extension [Tags for Typed Arrays](https://tools.ietf.org/html/draft-ietf-cbor-array-tags-08).
+  The implementation uses the span class.
+
+Changes:
+
+- The `json_options` parameter to `precision()` has been changed from `int` to `int8_t`
+
+- The `json_options` parameter to `indent_size()` has been changed from `size_t` to `uint8_t`
+
+- The `csv_options` parameter to `precision()` has been changed from `int` to `int8_t`
+
+- The CSV extension enum name `quote_style_type` has been deprecated and renamed to `quote_style_kind`.
+
+- The CSV extension enum name `mapping_type` has been deprecated and renamed to `mapping_kind`.
+
+- The `do_` virtual functions in `basic_json_content_handler` have been augmented with a `std::error_code`
+output parameter, e.g.
+
+    virtual bool do_begin_object(semantic_tag tag, const ser_context& context, std::error_code& ec) = 0;
+
+v0.136.1
+--------
+
+Defect fixes:
+
+- This version fixes a defect in the `erase` functions for
+  the order preserving `basic_json` specializations, in
+  particular, for `ojson` (issue 188.) 
+
+v0.136.0
+--------
+
+For consistency with other names, the names of the convenience macros below
+for classes with templates and JSON with given names have been deprecated.
+
+    JSONCONS_MEMBER_TRAITS_NAMED_DECL
+    JSONCONS_STRICT_MEMBER_TRAITS_NAMED_DECL
+    JSONCONS_TEMPLATE_MEMBER_TRAITS_DECL
+    JSONCONS_STRICT_TEMPLATE_MEMBER_TRAITS_DECL
+    JSONCONS_TEMPLATE_MEMBER_TRAITS_NAMED_DECL
+    JSONCONS_STRICT_TEMPLATE_MEMBER_TRAITS_NAMED_DECL
+    JSONCONS_ENUM_TRAITS_NAMED_DECL
+    JSONCONS_GETTER_CTOR_TRAITS_NAMED_DECL
+    JSONCONS_TEMPLATE_GETTER_CTOR_TRAITS_DECL
+    JSONCONS_TEMPLATE_GETTER_CTOR_TRAITS_NAMED_DECL
+    JSONCONS_GETTER_SETTER_TRAITS_NAMED_DECL
+    JSONCONS_STRICT_GETTER_SETTER_TRAITS_NAMED_DECL
+    JSONCONS_TEMPLATE_GETTER_SETTER_TRAITS_NAMED_DECL
+    JSONCONS_STRICT_TEMPLATE_GETTER_SETTER_TRAITS_NAMED_DECL
+
+They have been renamed to
+
+    JSONCONS_MEMBER_NAMED_TRAITS_DECL
+    JSONCONS_STRICT_MEMBER_NAMED_TRAITS_DECL
+    JSONCONS_TPL_MEMBER_TRAITS_DECL
+    JSONCONS_STRICT_TPL_MEMBER_TRAITS_DECL
+    JSONCONS_TPL_MEMBER_NAMED_TRAITS_DECL
+    JSONCONS_STRICT_TPL_MEMBER_NAMED_TRAITS_DECL
+    JSONCONS_ENUM_NAMED_TRAITS_DECL
+    JSONCONS_GETTER_CTOR_NAMED_TRAITS_DECL
+    JSONCONS_TPL_GETTER_CTOR_TRAITS_DECL
+    JSONCONS_TPL_GETTER_CTOR_NAMED_TRAITS_DECL
+    JSONCONS_GETTER_SETTER_NAMED_TRAITS_DECL
+    JSONCONS_STRICT_GETTER_SETTER_NAMED_TRAITS_DECL
+    JSONCONS_TPL_GETTER_SETTER_NAMED_TRAITS_DECL
+    JSONCONS_STRICT_TPL_GETTER_SETTER_NAMED_TRAITS_DECL
+
+See [json_type_traits](https://github.com/danielaparker/jsoncons/blob/master/doc/ref/json_type_traits.md)
+
+v0.135.0
+--------
+
+New macros that generate the code to specialize `json_type_traits` from the getter and setter functions
+and serialize to given names:
+
+- `JSONCONS_GETTER_SETTER_TRAITS_NAMED_DECL(class_name,(getter_name0,setter_name0,"name0"),(getter_name1,setter_name1,"name1")...)`
+- `JSONCONS_STRICT_GETTER_SETTER_TRAITS_NAMED_DECL(class_name,(getter_name0,setter_name0,"name0"),(getter_name1,setter_name1,"name1")...) `
+
+- `JSONCONS_TEMPLATE_GETTER_SETTER_TRAITS_NAMED_DECL(num_template_params,class_name,(getter_name0,setter_name0,"name0"),(getter_name1,setter_name1,"name1")...) `
+- `JSONCONS_STRICT_TEMPLATE_GETTER_SETTER_TRAITS_NAMED_DECL(num_template_params,class_name,(getter_name0,setter_name0,"name0"),(getter_name1,setter_name1,"name1")...) `
+
+Support for disabling exceptions
+
+- Support compilation with exceptions disabled
+
+v0.134.0
+--------
+
+- Fixed [Compilation issue #178](https://github.com/danielaparker/jsoncons/issues/178).
+
+- The name `jsonpointer::address` has been deprecated and renamed
+  to `jsonpointer::json_ptr`
+
+- `basic_json::contains` declared `noexcept` 
+
+- Support stateful result and work allocators in `json_decoder`
+
+- Support stateful work allocators in `basic_json_reader`, `basic_json_parser`,
+`basic_csv_reader` and `basic_csv_parser`.
+
 v0.133.0
 --------
 

@@ -12,21 +12,23 @@ data structures, using [json_type_traits](../json_type_traits.md).
 
 [basic_ubjson_encoder](basic_ubjson_encoder.md)
 
-#### jsoncons-ubjson mappings
+[ubjson_options](ubjson_options.md)
 
-jsoncons data item|jsoncons tag|UBJSON data item
---------------|------------------|---------------
-null          |                  | null
-bool          |                  | true or false
-int64         |                  | uint8_t or integer
-uint64        |                  | uint8_t or integer
-double        |                  | float 32 or float 64
-string        |                  | string
-string        | bigint      | high precision number type
-string        | bigdec      | high precision number type
-byte_string   |                  | array of uint8_t
-array         |                  | array 
-object        |                  | object
+#### Mappings between UBJSON and jsoncons data items
+
+UBJSON data item           | jsoncons data item|jsoncons tag  
+---------------------------|---------------|------------------
+ null                      | null          |                  
+ true or false             | bool          |                  
+ uint8_t or integer        | int64         |                  
+ uint8_t or integer        | uint64        |                  
+ float 32 or float 64      | double        |                  
+ string                    | string        |                  
+ high precision number type| string        | bigint           
+ high precision number type| string        | bigdec           
+ array of uint8_t          | byte_string   |                  
+ array                     | array         |                  
+ object                    | object        |                  
 
 ## Examples
 
@@ -39,7 +41,7 @@ For the examples below you need to include some header files and initialize a bu
 #include <iostream>
 #include <jsoncons/json.hpp>
 #include <jsoncons_ext/ubjson/ubjson.hpp>
-#include <jsoncons_ext/jsonpath/json_query.hpp>
+#include <jsoncons_ext/jsonpath/jsonpath.hpp>
 
 using namespace jsoncons; // for convenience
 
@@ -62,9 +64,9 @@ jsoncons allows you to work with the UBJSON data similarly to JSON data:
 
 - As a variant-like data structure, [basic_json](doc/ref/basic_json.md) 
 
-- As a strongly typed C++ data structure
+- As a strongly typed C++ data structure that implements [json_type_traits](../json_type_traits.md) 
 
-- As a stream of parse events
+- With [cursor-level access](doc/ref/ubjson/basic_ubjson_cursor.md) to a stream of parse events
 
 #### As a variant-like data structure
 
@@ -143,7 +145,7 @@ Output:
 23.8889
 ```
 
-#### As a stream of parse events
+#### With cursor-level access
 
 ```c++
 int main()
@@ -166,7 +168,7 @@ int main()
             case staj_event_type::end_object:
                 std::cout << event.event_type() << " " << "(" << event.tag() << ")\n";
                 break;
-            case staj_event_type::name:
+            case staj_event_type::key:
                 // Or std::string_view, if supported
                 std::cout << event.event_type() << ": " << event.get<jsoncons::string_view>() << " " << "(" << event.tag() << ")\n";
                 break;
@@ -207,7 +209,7 @@ double_value: 23.8889 (n/a)
 end_array (n/a)
 ```
 
-You can apply a filter to the stream, for example,
+You can apply a filter to a cursor using the pipe syntax, for example,
 
 ```c++
 int main()
@@ -217,10 +219,12 @@ int main()
         return (ev.event_type() == staj_event_type::double_value) && (ev.get<double>() < 30.0);  
     };
 
-    ubjson::ubjson_bytes_cursor cursor(data, filter);
-    for (; !cursor.done(); cursor.next())
+    ubjson::ubjson_bytes_cursor cursor(data);
+
+    auto filtered_c = cursor | filter;
+    for (; !filtered_c.done(); filtered_c.next())
     {
-        const auto& event = cursor.current();
+        const auto& event = filtered_c.current();
         switch (event.event_type())
         {
             case staj_event_type::double_value:
@@ -389,9 +393,9 @@ namespace ns {
 } // namespace ns
 
 // Declare the traits. Specify which data members need to be serialized.
-JSONCONS_ENUM_TRAITS_DECL(ns::hiking_experience, beginner, intermediate, advanced)
-JSONCONS_GETTER_CTOR_TRAITS_DECL(ns::hiking_reputon, rater, assertion, rated, rating)
-JSONCONS_GETTER_CTOR_TRAITS_DECL(ns::hiking_reputation, application, reputons)
+JSONCONS_ENUM_TRAITS(ns::hiking_experience, beginner, intermediate, advanced)
+JSONCONS_ALL_CTOR_GETTER_TRAITS(ns::hiking_reputon, rater, assertion, rated, rating)
+JSONCONS_ALL_CTOR_GETTER_TRAITS(ns::hiking_reputation, application, reputons)
 
 int main()
 {

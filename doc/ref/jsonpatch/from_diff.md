@@ -1,13 +1,13 @@
 ### jsoncons::jsonpatch::from_diff
 
-Create a JSON Patch from a diff of two json documents.
-
 ```c++
 #include <jsoncons_ext/jsonpatch/jsonpatch.hpp>
 
 template <class Json>
 Json from_diff(const Json& source, const Json& target)
 ```
+
+Create a JSON Patch from a diff of two json documents.
 
 #### Return value
 
@@ -21,23 +21,23 @@ Returns a JSON Patch.
 #include <jsoncons/json.hpp>
 #include <jsoncons_ext/jsonpatch/jsonpatch.hpp>
 
-using namespace jsoncons::literals;
-namespace jp = jsoncons::jsonpatch;
+using jsoncons::json;
+namespace jsonpatch = jsoncons::jsonpatch;
 
 int main()
 {
-    jsoncons::json source = R"(
+    json source = json::parse(R"(
         {"/": 9, "foo": "bar"}
-    )"_json;
+    )");
 
-    jsoncons::json target = R"(
+    json target = json::parse(R"(
         { "baz":"qux", "foo": [ "bar", "baz" ]}
-    )"_json;
+    )");
 
-    auto patch = jp::from_diff(source, target);
+    auto patch = jsonpatch::from_diff(source, target);
 
     std::error_code ec;
-    jp::apply_patch(source, patch, ec);
+    jsonpatch::apply_patch(source, patch, ec);
 
     std::cout << "(1) " << pretty_print(patch) << std::endl;
     std::cout << "(2) " << pretty_print(source) << std::endl;

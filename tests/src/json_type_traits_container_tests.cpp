@@ -4,26 +4,26 @@
 #include <jsoncons/json.hpp>
 #include <jsoncons/json_encoder.hpp>
 #include <catch/catch.hpp>
-#include <sstream>
-#include <vector>
-#include <map>
-#include <utility>
-#include <ctime>
+#include <array>
 #include <cstdint>
-#include <unordered_set>
-#include <unordered_map>
-#include <set>
+#include <ctime>
 #include <deque>
 #include <forward_list>
 #include <list>
-#include <array>
+#include <map>
+#include <set>
+#include <sstream>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <valarray>
+#include <vector>
 
 using namespace jsoncons;
 
 TEST_CASE("test_json_as_pair")
 {
-    json j = json::array{false,1};
+    json j(json_array_arg, {false,1});
     auto t = j.as<std::pair<bool,int>>();
     CHECK(std::get<0>(t) == false);
     CHECK(std::get<1>(t) == 1);
@@ -43,7 +43,7 @@ TEST_CASE("test_tuple_to_json")
 
 TEST_CASE("test_json_as_tuple")
 {
-    json j = json::array{false,1,"foo"};
+    json j(json_array_arg, {false,1,"foo"});
 
     auto t = j.as<std::tuple<bool,int,std::string>>();
 
@@ -63,7 +63,7 @@ TEST_CASE("test_characters")
     std::string s2 = a.as<std::string>();
     std::string t2 = b.as<std::string>();
 
-    json c = json::array{ "short","a long string" };
+    json c(json_array_arg, { "short","a long string" });
     auto u = c.as<std::vector<std::string>>();
 }
 
@@ -71,14 +71,14 @@ TEST_CASE("test_characters")
 
 TEST_CASE("test_is_json_vector")
 {
-    json a = json::array{0,1,2,3,4}; 
+    json a(json_array_arg, {0,1,2,3,4}); 
 
     CHECK(true == a.is<std::vector<uint64_t>>());
 }
 
 TEST_CASE("test_as_vector")
 {
-    json a = json::array{0,1,2,3,4}; 
+    json a(json_array_arg, {0,1,2,3,4}); 
     std::vector<int> v = a.as<std::vector<int>>();
 
     CHECK(v[0] == 0);
@@ -152,14 +152,14 @@ TEST_CASE("test_construct_const_vector_of_bool")
 
 TEST_CASE("test_is_json_valarray")
 {
-    json a = json::array{0,1,2,3,4}; 
+    json a(json_array_arg, {0,1,2,3,4}); 
 
     CHECK(true == a.is<std::valarray<uint64_t>>());
 }
 
 TEST_CASE("test_as_valarray")
 {
-    json a = json::array{0,1,2,3,4}; 
+    json a(json_array_arg, {0,1,2,3,4}); 
     std::valarray<int> v = a.as<std::valarray<int>>();
 
     CHECK(v[0] == 0);
@@ -240,6 +240,19 @@ TEST_CASE("test_as_map2")
 
     json o2(m);
     CHECK(std::string("1") == o2["first"].as<std::string>());
+}
+
+TEST_CASE("byte string container")
+{
+    SECTION("as<std::vector>")
+    {
+        std::vector<uint8_t> bytes = {'H', 'e', 'l', 'l', 'o'};
+        json j(byte_string_arg, bytes);
+
+        auto v = j.as<std::vector<uint8_t>>();
+
+        json other(byte_string_arg, v);
+    }
 }
 
 TEST_CASE("test_from_stl_container")
@@ -350,7 +363,7 @@ struct json_type_traits<Json, own_vector> {
     }
 	static Json to_json(const own_vector& val){
 		Json j;
-		for(size_t i=0;i<val.size();i+=2){
+		for(std::size_t i=0;i<val.size();i+=2){
 			j[std::to_string(val[i])] = val[i + 1];
 		}
 		return j;
@@ -364,10 +377,437 @@ struct is_json_type_traits_declared<own_vector> : public std::true_type
 
 TEST_CASE("own_vector json_type_traits")
 {
-    json j = json::object{ {"1",2},{"3",4} };
+    json j(json_object_arg,{ {"1",2},{"3",4} });
     REQUIRE(j.is<own_vector>());
     auto v = j.as<own_vector>();
     REQUIRE(v.size() == 4);
     json j2 = v;
     CHECK(j2 == j);
+}
+
+TEST_CASE("map with integer key")
+{
+    SECTION("test 1")
+    {
+        std::map<uint32_t, int> val{ {1,1,},{2,2} };
+
+        json j{ val };
+        //CHECK(j.is<std::map<uint32_t, int>>());
+        //CHECK(j.is<std::map<uint64_t, int>>());
+        CHECK_FALSE(!j.is<std::map<std::string, int>>());
+
+        REQUIRE(j.is_object());
+        REQUIRE(j.size() == 2);
+        CHECK(j["1"] == 1);
+        CHECK(j["2"] == 2);
+
+        std::map<uint64_t, int> other = j.as<std::map<uint64_t, int>>();
+        REQUIRE(other.size() == 2);
+        CHECK(other[1] == 1);
+        CHECK(other[2] == 2);
+
+        json other_j{ other };
+        REQUIRE(other_j.is_object());
+        REQUIRE(other_j.size() == 2);
+        CHECK(other_j["1"] == 1);
+        CHECK(other_j["2"] == 2);
+    }
+}
+
+namespace {
+namespace ns {
+
+    enum class MyCriterionType{
+		First,
+		Presentation = First,
+		MessageType,
+		Version,
+		Release,
+		Last
+	};
+
+    template <typename E>
+    class TCriterion
+    {
+    public:
+    	TCriterion() = default;
+    	TCriterion(E iType, std::string iVal) : _type(iType), _value(iVal) {}
+
+    	const std::string& getValue() const {
+    		return _value;
+    	}
+
+    	const E getType() const {
+    		return _type;
+    	}
+
+    protected:
+    	JSONCONS_TYPE_TRAITS_FRIEND
+    	E _type;
+    	std::string _value;
+    };
+
+	struct EnumClassHash {
+		template<typename T>
+		std::size_t operator()(T t) const noexcept {
+			return static_cast<std::size_t>(t);
+		}
+	};//To be able to use the enum class as key
+
+    template <typename E>
+    class TCriteria
+    {
+    public:
+    	TCriteria() = default;
+
+    	const std::unordered_map <E, TCriterion<E>>& getCriteriaMap() const {
+    		return _criteriaMap;
+    	}
+
+    //protected:
+    	JSONCONS_TYPE_TRAITS_FRIEND
+    	std::unordered_map<E, TCriterion<E>, EnumClassHash> _criteriaMap;
+    };
+
+} // ns
+} // namespace
+
+JSONCONS_TPL_ALL_MEMBER_NAME_TRAITS(1,ns::TCriterion, (_type,"name"), (_value,"value"))
+JSONCONS_TPL_ALL_MEMBER_NAME_TRAITS(1, ns::TCriteria, (_criteriaMap, "criteriaList"))
+JSONCONS_ENUM_NAME_TRAITS(ns::MyCriterionType,(First,"first"),(MessageType,"message-type"),(Version,"version"),(Release,"release"),(Last,"last"))
+
+TEST_CASE("map with enum key")
+{
+    SECTION("test 1")
+    {
+        ns::TCriterion<ns::MyCriterionType> criterion(ns::MyCriterionType::MessageType,"foo");
+
+        std::string buffer;
+        encode_json(criterion, buffer, indenting::indent);
+        //std::cout << buffer << "\n";
+
+        auto val = decode_json<ns::TCriterion<ns::MyCriterionType>>(buffer);
+
+        CHECK(val.getValue() == std::string("foo"));
+        CHECK(val.getType() == ns::MyCriterionType::MessageType);
+    }
+    SECTION("test 2")
+    {
+        ns::TCriterion<ns::MyCriterionType> criterion(ns::MyCriterionType::MessageType, "foo");
+            
+        ns::TCriteria<ns::MyCriterionType> criteria;
+        criteria._criteriaMap.emplace(ns::MyCriterionType::MessageType, criterion);
+
+        std::string buffer = R"(
+{
+    "criteriaList" : 
+    {
+        "message-type" : {
+            "name": "message-type",
+            "value": "foo"
+        }
+    }
+}
+        )";
+        encode_json(criteria, buffer, indenting::indent);
+        //std::cout << buffer << "\n";
+
+        auto val = decode_json<ns::TCriteria<ns::MyCriterionType>>(buffer);
+
+        auto x = val._criteriaMap.at(ns::MyCriterionType::MessageType);
+
+        CHECK(x.getValue() == std::string("foo"));
+        CHECK(x.getType() == ns::MyCriterionType::MessageType);
+    }
+}
+
+namespace {
+namespace ns {
+
+    struct Value {
+    	std::string  name;
+    	std::int32_t value;
+
+        friend bool operator==(const Value& lhs, const Value& rhs)
+        {
+            return lhs.name == rhs.name && lhs.value == rhs.value;
+        }
+        friend bool operator!=(const Value& lhs, const Value& rhs)
+        {
+            return !(lhs == rhs);
+        }
+    };
+
+    struct ValueHash {
+		std::size_t operator()(const Value& val) const noexcept
+        {
+            std::size_t h1 = std::hash<std::string>{}(val.name);
+            std::size_t h2 = std::hash<std::int32_t>{}(val.value);
+            return h1 ^ (h2 << 1);
+		}
+	};
+
+    inline bool operator<(const Value &l, const Value &r) noexcept {
+      return l.name < r.name;
+    }
+
+    template <class Container>
+    struct Project {
+    	std::int32_t         version = 1;
+    	std::string          name;
+    	std::string          author;
+    	std::string          notes;
+    	bool                 showNotes;
+    	Container values;
+
+        friend bool operator==(const Project& lhs, const Project& rhs)
+        {
+            return (lhs.version == rhs.version && 
+                lhs.name == rhs.name &&
+                lhs.author == rhs.author &&
+                lhs.notes == rhs.notes &&
+                lhs.showNotes == rhs.showNotes &&
+                lhs.values == rhs.values);
+        }
+    };
+
+} // namespace ns
+} // namespace
+
+JSONCONS_N_MEMBER_TRAITS(ns::Value, 0,
+	name,
+	value
+)
+
+JSONCONS_TPL_N_MEMBER_TRAITS(1, ns::Project, 0,
+	version,
+	name,
+	author,
+	notes,
+	showNotes,
+	values
+)
+
+TEST_CASE("encode/decode set traits")
+{
+    using project_type = ns::Project<std::set<ns::Value>>;
+
+    project_type project;
+    project.name = "xyz";
+    project.author = "Jane Doe";
+    project.showNotes = true;
+    project.values.insert({ "foo",1 });
+    project.values.insert({ "bar",2 });
+    project.values.insert({ "foo",1 });
+    project.values.insert({ "baz",1 });
+
+    SECTION("encode/decode")
+    {
+        std::string s;
+        encode_json(project, s, indenting::indent);
+
+        auto project2 = decode_json<project_type>(s);
+
+        CHECK(project2 == project);
+    }
+
+    SECTION("json_type_traits")
+    {
+        json j{project};
+
+        auto project2 = j.as<project_type>();
+        CHECK(project2 == project);
+    }
+}
+
+TEST_CASE("encode/decode multiset traits")
+{
+    using project_type = ns::Project<std::multiset<ns::Value>>;
+
+    project_type project;
+    project.name = "xyz";
+    project.author = "Jane Doe";
+    project.showNotes = true;
+    project.values.insert({ "foo",1 });
+    project.values.insert({ "bar",2 });
+    project.values.insert({ "foo",1 });
+    project.values.insert({ "baz",1 });
+
+    SECTION("encode/decode")
+    {
+        std::string s;
+        encode_json(project, s, indenting::indent);
+
+        auto project2 = decode_json<project_type>(s);
+
+        CHECK(project2 == project);
+    }
+
+    SECTION("json_type_traits")
+    {
+        json j{project};
+
+        auto project2 = j.as<project_type>();
+        CHECK(project2 == project);
+    }
+}
+
+TEST_CASE("encode/decode unordered_set traits")
+{
+    using project_type = ns::Project<std::unordered_set<ns::Value,ns::ValueHash>>;
+
+    project_type project;
+    project.name = "xyz";
+    project.author = "Jane Doe";
+    project.showNotes = true;
+    project.values.insert({ "foo",1 });
+    project.values.insert({ "bar",2 });
+    project.values.insert({ "foo",1 });
+    project.values.insert({ "baz",1 });
+
+    SECTION("encode/decode")
+    {
+        std::string s;
+        encode_json(project, s, indenting::indent);
+
+        auto project2 = decode_json<project_type>(s);
+
+        CHECK(project2 == project);
+    }
+
+    SECTION("json_type_traits")
+    {
+        json j{project};
+
+        auto project2 = j.as<project_type>();
+        CHECK(project2 == project);
+    }
+}
+
+TEST_CASE("encode/decode unordered_multiset traits")
+{
+    using project_type = ns::Project<std::unordered_set<ns::Value,ns::ValueHash>>;
+
+    project_type project;
+    project.name = "xyz";
+    project.author = "Jane Doe";
+    project.showNotes = true;
+    project.values.insert({ "foo",1 });
+    project.values.insert({ "bar",2 });
+    project.values.insert({ "foo",1 });
+    project.values.insert({ "baz",1 });
+
+    SECTION("encode/decode")
+    {
+        std::string s;
+        encode_json(project, s, indenting::indent);
+
+        auto project2 = decode_json<project_type>(s);
+
+        CHECK(project2 == project);
+    }
+
+    SECTION("json_type_traits")
+    {
+        json j{project};
+
+        auto project2 = j.as<project_type>();
+        CHECK(project2 == project);
+    }
+}
+
+TEST_CASE("encode/decode std::forward_list traits")
+{
+    using project_type = ns::Project<std::forward_list<ns::Value>>;
+
+    project_type project;
+    project.name = "xyz";
+    project.author = "Jane Doe";
+    project.showNotes = true;
+    project.values.push_front({ "foo",1 });
+    project.values.push_front({ "bar",2 });
+    project.values.push_front({ "foo",1 });
+    project.values.push_front({ "baz",1 });
+
+    SECTION("encode/decode")
+    {
+        std::string s;
+        encode_json(project, s, indenting::indent);
+
+        auto project2 = decode_json<project_type>(s);
+
+        CHECK(project2 == project);
+    }
+
+    SECTION("json_type_traits")
+    {
+        json j{project};
+
+        auto project2 = j.as<project_type>();
+        CHECK(project2 == project);
+    }
+}
+
+TEST_CASE("encode/decode std::deque traits")
+{
+    using project_type = ns::Project<std::deque<ns::Value>>;
+
+    project_type project;
+    project.name = "xyz";
+    project.author = "Jane Doe";
+    project.showNotes = true;
+    project.values.push_back({ "foo",1 });
+    project.values.push_back({ "bar",2 });
+    project.values.push_back({ "foo",1 });
+    project.values.push_back({ "baz",1 });
+
+    SECTION("encode/decode")
+    {
+        std::string s;
+        encode_json(project, s, indenting::indent);
+
+        auto project2 = decode_json<project_type>(s);
+
+        CHECK(project2 == project);
+    }
+
+    SECTION("json_type_traits")
+    {
+        json j{project};
+
+        auto project2 = j.as<project_type>();
+        CHECK(project2 == project);
+    }
+}
+
+TEST_CASE("encode/decode std::vector traits")
+{
+    using project_type = ns::Project<std::vector<ns::Value>>;
+
+    project_type project;
+    project.name = "xyz";
+    project.author = "Jane Doe";
+    project.showNotes = true;
+    project.values.push_back({ "foo",1 });
+    project.values.push_back({ "bar",2 });
+    project.values.push_back({ "foo",1 });
+    project.values.push_back({ "baz",1 });
+
+    SECTION("encode/decode")
+    {
+        std::string s;
+        encode_json(project, s, indenting::indent);
+
+        auto project2 = decode_json<project_type>(s);
+
+        CHECK(project2 == project);
+    }
+
+    SECTION("json_type_traits")
+    {
+        json j{project};
+
+        auto project2 = j.as<project_type>();
+        CHECK(project2 == project);
+    }
 }

@@ -4,6 +4,8 @@
 #include <jsoncons_ext/jsonpatch/jsonpatch_error.hpp>
 ```
 
+<br>
+
 The constant integer values scoped by `jsonpatch_errc` define the values for jsonpatch error codes.
 
 ### Member constants

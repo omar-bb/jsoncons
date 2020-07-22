@@ -10,33 +10,34 @@
 #include <string> // std::basic_string
 #include <vector> // std::vector
 #include <unordered_map> // std::unordered_map
+#include <map>
 #include <limits> // std::numeric_limits
 #include <utility> // std::move
 #include <jsoncons_ext/jsonpath/jsonpath_error.hpp>
 
 namespace jsoncons { namespace jsonpath {
 
-JSONCONS_STRING_LITERAL(keys,'k','e','y','s')
-JSONCONS_STRING_LITERAL(avg,'a','v','g')
-JSONCONS_STRING_LITERAL(max,'m','a','x')
-JSONCONS_STRING_LITERAL(min,'m','i','n')
-JSONCONS_STRING_LITERAL(sum,'s','u','m')
-JSONCONS_STRING_LITERAL(prod,'p','r','o','d')
-JSONCONS_STRING_LITERAL(count,'c','o','u','n','t')
-JSONCONS_STRING_LITERAL(tokenize,'t','o','k','e','n','i','z','e')
+JSONCONS_STRING_LITERAL(keys_literal,'k','e','y','s')
+JSONCONS_STRING_LITERAL(avg_literal,'a','v','g')
+JSONCONS_STRING_LITERAL(max_literal,'m','a','x')
+JSONCONS_STRING_LITERAL(min_literal,'m','i','n')
+JSONCONS_STRING_LITERAL(sum_literal,'s','u','m')
+JSONCONS_STRING_LITERAL(prod_literal,'p','r','o','d')
+JSONCONS_STRING_LITERAL(count_literal,'c','o','u','n','t')
+JSONCONS_STRING_LITERAL(tokenize_literal,'t','o','k','e','n','i','z','e')
 
 template <class Json, class JsonPointer>
 class function_table
 {
 public:
-    typedef typename Json::char_type char_type;
-    typedef typename Json::char_traits_type char_traits_type;
-    typedef std::basic_string<char_type,char_traits_type> string_type;
-    typedef typename Json::string_view_type string_view_type;
-    typedef JsonPointer pointer;
-    typedef std::vector<pointer> argument_type;
+    using char_type = typename Json::char_type;
+    using char_traits_type = typename Json::char_traits_type;
+    using string_type = std::basic_string<char_type,char_traits_type>;
+    using string_view_type = typename Json::string_view_type;
+    using pointer = JsonPointer;
+    using argument_type = std::vector<pointer>;
     typedef std::function<Json(const std::vector<argument_type>&, std::error_code&)> function_type;
-    typedef std::unordered_map<string_type,function_type> function_dictionary;
+    using function_dictionary = std::map<basic_string_view<char_type>,function_type>;
 private:
     const function_dictionary functions_ =
     {
@@ -147,7 +148,7 @@ private:
                         return Json();
                     }
                     const auto& arg = args[0];
-                    size_t count = 0;
+                    std::size_t count = 0;
                     while (count < arg.size())
                     {
                         ++count;

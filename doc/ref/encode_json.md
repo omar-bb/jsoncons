@@ -4,78 +4,77 @@ Encode a C++ data structure to a JSON formatted string or stream. `encode_json` 
 have [json_type_traits](https://github.com/danielaparker/jsoncons/blob/master/doc/ref/json_type_traits.md) defined.
 
 ```c++
-#include <jsoncons/json.hpp>
-
-template <class T, class CharT>
-void encode_json(const T& val,
-                 std::basic_ostream<CharT>& os, 
-                 const basic_json_encode_options<CharT>& options = basic_json_options<CharT>::get_default_options(), 
-                 indenting line_indent = indenting::no_indent); // (1)
+#include <jsoncons/encode_json.hpp>
 
 template <class T, class CharT>
 void encode_json(const T& val, 
-                 std::basic_ostream<CharT>& os, 
-                 indenting line_indent); // (2)
+                 std::basic_string<CharT>& s, 
+                 indenting line_indent); // (1)
 
 template <class T, class CharT>
 void encode_json(const T& val,
                  std::basic_string<CharT>& s, 
-                 const basic_json_encode_options<CharT>& options = basic_json_options<CharT>::get_default_options(), 
-                 indenting line_indent = indenting::no_indent); // (3)
+                 const basic_json_encode_options<CharT>& options = basic_json_encode_options<CharT>(), 
+                 indenting line_indent = indenting::no_indent); // (2)
 
 template <class T, class CharT>
 void encode_json(const T& val, 
-                 std::basic_string<CharT>& s, 
-                 indenting line_indent); // (4)
+                 std::basic_ostream<CharT>& os, 
+                 indenting line_indent); // (3)
+
+template <class T, class CharT>
+void encode_json(const T& val,
+                 std::basic_ostream<CharT>& os, 
+                 const basic_json_encode_options<CharT>& options = basic_json_encode_options<CharT>(), 
+                 indenting line_indent = indenting::no_indent); // (4)
 
 template <class T, class CharT>
 void encode_json(const T& val, 
-                 basic_json_content_handler<CharT>& receiver); // (5)
+                 basic_json_visitor<CharT>& encoder); // (5)
 
-template <class T, class CharT, class ImplementationPolicy, class Allocator>
-void encode_json(const basic_json<CharT,ImplementationPolicy,Allocator>& j,
-                 const T& val,
-                 std::basic_ostream<CharT>& os, 
-                 const basic_json_encode_options<CharT>& options = basic_json_options<CharT>::get_default_options(), 
-                 indenting line_indent = indenting::no_indent); // (6)
+template <class T, class CharT, class TempAllocator>
+void encode_json(temp_allocator_arg_t, const TempAllocator& temp_alloc,
+                 const T& val, 
+                 std::basic_string<CharT>& s, 
+                 indenting line_indent); // (6)
 
-template <class T, class CharT, class ImplementationPolicy, class Allocator>
-void encode_json(const basic_json<CharT,ImplementationPolicy,Allocator>& j,
-                 const T& val,
-                 std::basic_ostream<CharT>& os, 
-                 indenting line_indent); // (7)
-
-template <class T, class CharT, class ImplementationPolicy, class Allocator>
-void encode_json(const basic_json<CharT,ImplementationPolicy,Allocator>& j,
+template <class T, class CharT, class TempAllocator>
+void encode_json(temp_allocator_arg_t, const TempAllocator& temp_alloc,
                  const T& val,
                  std::basic_string<CharT>& s, 
-                 const basic_json_encode_options<CharT>& options = basic_json_options<CharT>::get_default_options(), 
-                 indenting line_indent = indenting::no_indent); // (8)
+                 const basic_json_encode_options<CharT>& options = basic_json_encode_options<CharT>(), 
+                 indenting line_indent = indenting::no_indent); // (7)
 
-template <class T, class CharT, class ImplementationPolicy, class Allocator>
-void encode_json(const basic_json<CharT,ImplementationPolicy,Allocator>& j,
-                 const T& val,
-                 std::basic_string<CharT>& s, 
-                 indenting line_indent); // (9)
+template <class T, class CharT, class TempAllocator>
+void encode_json(temp_allocator_arg_t, const TempAllocator& temp_alloc,
+                 const T& val, 
+                 std::basic_ostream<CharT>& os, 
+                 indenting line_indent); // (8)
 
-template <class T, class CharT, class ImplementationPolicy, class Allocator>
-void encode_json(const basic_json<CharT, ImplementationPolicy, Allocator>& j, 
+template <class T, class CharT, class TempAllocator>
+void encode_json(temp_allocator_arg_t, const TempAllocator& temp_alloc,
                  const T& val,
-                 basic_json_content_handler<CharT>& receiver); // (10)
+                 std::basic_ostream<CharT>& os, 
+                 const basic_json_encode_options<CharT>& options = basic_json_encode_options<CharT>(), 
+                 indenting line_indent = indenting::no_indent); // (9)
+
+template <class T, class CharT, class TempAllocator>
+void encode_json(temp_allocator_arg_t, const TempAllocator& temp_alloc,
+                 const T& val, 
+                 basic_json_visitor<CharT>& encoder); // (10)
 ```
 
-(1) Encode `val` to output stream with the specified options and line indenting.
+(1) Encode `val` to string using the specified (or defaulted) [line_indent](indenting.md).
 
-(2) Encode `val` to output stream with the specified line indenting.
+(2) Encode `val` to string using the specified (or defaulted) [options](basic_json_options.md) and [line_indent](indenting.md).
 
-(3) Encode `val` to string with the specified options and line indenting.
+(3) Encode `val` to output stream with the specified (or defaulted) [line_indent](indenting.md).
 
-(4) Encode `val` to string with the specified line indenting.
+(4) Encode `val` to output stream using the specified (or defaulted) [options](basic_json_options.md) and [line_indent](indenting.md).
 
-(5) Convert `val` to json events and stream through content handler.
+(5) Convert `val` to json events and stream through encoder.
 
-Functions (1)-(5) perform encodings using the default json type `basic_json<CharT>`.
-Functions (6)-(10) are the same but perform encodings using the supplied `basic_json`.
+Functions (6)-(10) are the same except `temp_alloc` is used to allocate temporary work areas.
 
 #### Parameters
 
@@ -85,8 +84,8 @@ Functions (6)-(10) are the same but perform encodings using the supplied `basic_
     <td>C++ data structure</td> 
   </tr>
   <tr>
-    <td>handler</td>
-    <td>JSON output handler</td> 
+    <td>visitor</td>
+    <td>JSON output visitor</td> 
   </tr>
   <tr>
     <td>options</td>
@@ -105,11 +104,6 @@ Functions (6)-(10) are the same but perform encodings using the supplied `basic_
 #### Return value
 
 None 
-
-#### See also
-
-- [json_content_handler](json_content_handler.md)
-- [basic_json_options](basic_json_options.md)
     
 ### Examples
 
@@ -125,7 +119,7 @@ using namespace jsoncons;
 
 int main()
 {
-    typedef std::map<std::string,std::tuple<std::string,std::string,double>> employee_collection;
+    using employee_collection = std::map<std::string,std::tuple<std::string,std::string,double>>;
 
     employee_collection employees = 
     { 
@@ -155,7 +149,7 @@ Output:
 }
 ```
     
-#### Contain JSON output in an object
+#### Contain JSON output in an object (prettified output)
 
 ```c++
 #include <iostream>
@@ -167,19 +161,19 @@ using namespace jsoncons;
 
 int main()
 {
-    std::map<std::string,std::tuple<std::string,std::string,double>> employees = 
-    { 
+    std::map<std::string, std::tuple<std::string, std::string, double>> employees =
+    {
         {"John Smith",{"Hourly","Software Engineer",10000}},
         {"Jane Doe",{"Commission","Sales",20000}}
     };
 
-    json_encoder encoder(std::cout, jsoncons::indenting::indent); 
+    json_stream_encoder encoder(std::cout);
 
-    encoder.begin_object();       
-    encoder.write_name("Employees");       
+    encoder.begin_object();
+    encoder.key("Employees");
     encode_json(employees, encoder);
-    encoder.end_object();       
-    encoder.flush();       
+    encoder.end_object();
+    encoder.flush();
 }
 ```
 Output:
@@ -191,9 +185,46 @@ Output:
     }
 }
 ```
+    
+#### Contain JSON output in an object (compressed output)
 
-#### See also
+```c++
+#include <iostream>
+#include <map>
+#include <tuple>
+#include <jsoncons/json.hpp>
 
-- [decode_json](decode_json.md)
+using namespace jsoncons;
 
+int main()
+{
+    std::map<std::string, std::tuple<std::string, std::string, double>> employees =
+    {
+        {"John Smith",{"Hourly","Software Engineer",10000}},
+        {"Jane Doe",{"Commission","Sales",20000}}
+    };
+
+    compact_json_stream_encoder encoder(std::cout);
+
+    encoder.begin_object();
+    encoder.key("Employees");
+    encode_json(employees, encoder);
+    encoder.end_object();
+    encoder.flush();
+}
+```
+Output:
+```json
+{"Employees":{"Jane Doe":["Commission","Sales",20000.0],"John Smith":["Hourly","Software Engineer",10000.0]}}
+```
+
+### See also
+
+[basic_json_visitor](basic_json_visitor.md)  
+
+[basic_json_options](basic_json_options.md)  
+
+[basic_json_encoder](basic_json_encoder.md)  
+
+[decode_json](decode_json.md)  
 

@@ -3,7 +3,7 @@
 
 #include <jsoncons/json.hpp>
 #include <jsoncons/json_encoder.hpp>
-#include <jsoncons/detail/type_traits.hpp>
+#include <jsoncons/detail/more_type_traits.hpp>
 #include <sstream>
 #include <vector>
 #include <utility>
@@ -15,10 +15,10 @@ using namespace jsoncons;
 template<class CharT>
 std::basic_string<CharT> float_to_string(double val, int precision)
 {
-    jsoncons::detail::print_double print(float_chars_format::general,precision);
+    jsoncons::detail::write_double print(float_chars_format::general,precision);
 
     std::basic_string<CharT> s;
-    jsoncons::string_result<std::basic_string<CharT>> writer(s);
+    jsoncons::string_sink<std::basic_string<CharT>> writer(s);
     print(val, writer);
     writer.flush();
     return s;

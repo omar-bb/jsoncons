@@ -13,6 +13,35 @@
 
 using namespace jsoncons;
 
+TEST_CASE("test_assignment")
+{
+    json root;
+
+    root["double_1"] = 10.0;
+
+    json double_1 = root["double_1"];
+
+    root["myobject"] = json();
+    root["myobject"]["double_2"] = 7.0;
+    root["myobject"]["bool_2"] = true;
+    root["myobject"]["int_2"] = 0LL;
+    root["myobject"]["string_2"] = "my string";
+    root["myarray"] = json(json_array_arg);
+
+    json double_2 = root["myobject"]["double_2"];
+    CHECK(double_1.as<double>() == Approx(10.0).epsilon(0.000001));
+
+    CHECK(double_2.as<double>() == Approx(7.0).epsilon(0.000001));
+    CHECK(double_2.as<int>() == 7);
+    CHECK(root["myobject"]["bool_2"].as<bool>());
+    CHECK(root["myobject"]["int_2"].as<int64_t>() == 0);
+    CHECK(root["myobject"]["string_2"].as<std::string>() == std::string("my string"));
+
+    CHECK(root["myobject"]["bool_2"].as<bool>());
+    CHECK(root["myobject"]["int_2"].as<long long>() == 0);
+    CHECK(root["myobject"]["string_2"].as<std::string>() == std::string("my string"));
+}
+
 TEST_CASE("test_1")
 {
     basic_json<char32_t> j; 
@@ -40,46 +69,15 @@ TEST_CASE("test_for_each_value")
     std::string input = "{\"A\":\"Jane\", \"B\":\"Roe\",\"C\":10}";
     json val = json::parse(input);
 
-    json::object_iterator it = val.object_range().begin();
+    auto it = val.object_range().begin();
 
     CHECK(it->value().is_string());
     ++it;
     CHECK(it->value().is_string());
     ++it;
-    CHECK(it->value().type() == jsoncons::storage_type::uint64_val);
+    CHECK(it->value().type() == jsoncons::json_type::uint64_value);
     ++it;
     CHECK((it == val.object_range().end()));
-}
-
-TEST_CASE("test_assignment")
-{
-    json root;
-
-    root["double_1"] = 10.0;
-
-    json double_1 = root["double_1"];
-
-    CHECK(double_1.as<double>() == Approx(10.0).epsilon(0.000001));
-
-    root["myobject"] = json();
-    root["myobject"]["double_2"] = 7.0;
-    root["myobject"]["bool_2"] = true;
-    root["myobject"]["int_2"] = 0LL;
-    root["myobject"]["string_2"] = "my string";
-    root["myarray"] = json::array();
-
-    json double_2 = root["myobject"]["double_2"];
-
-    CHECK(double_2.as<double>() == Approx(7.0).epsilon(0.000001));
-    CHECK(double_2.as<int>() == 7);
-    CHECK(root["myobject"]["bool_2"].as<bool>());
-    CHECK(root["myobject"]["int_2"].as<int64_t>() == 0);
-    CHECK(root["myobject"]["string_2"].as<std::string>() == std::string("my string"));
-
-    CHECK(root["myobject"]["bool_2"].as<bool>());
-    CHECK(root["myobject"]["int_2"].as<long long>() == 0);
-    CHECK(root["myobject"]["string_2"].as<std::string>() == std::string("my string"));
-
 }
 
 TEST_CASE("test_array")
@@ -179,7 +177,6 @@ TEST_CASE("test_u0000")
     //std::cout << std::hex << "Output:   " << os.str() << std::endl;
 
 }
-
 TEST_CASE("test_uHHHH")
 {
     std::string inputStr("[\"\\u007F\\u07FF\\u0800\"]");
@@ -224,7 +221,7 @@ TEST_CASE("test_multiline_comments")
     json j = json::parse(is);
 
     CHECK(j.is_array());
-    CHECK(j.is<json::array>());
+    CHECK(j.is_array());
     CHECK(j.size() == 0);
 }
 

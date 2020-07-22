@@ -20,7 +20,7 @@ None
 
 (1) Throws a [jsonpatch_error](jsonpatch_error.md) if `apply_patch` fails.
   
-(2) Sets the `std::error_code&` to the [jsonpatch_error_category](jsonpatch_errc.md) if `apply_patch` fails. 
+(2) Sets the out-parameter `ec` to the [jsonpatch_error_category](jsonpatch_errc.md) if `apply_patch` fails. 
 
 ### Examples
 
@@ -30,24 +30,24 @@ None
 #include <jsoncons/json.hpp>
 #include <jsoncons_ext/jsonpatch/jsonpatch.hpp>
 
-using namespace jsoncons::literals;
-namespace jp = jsoncons::jsonpatch;
+using jsoncons::json;
+namespace jsonpatch = jsoncons::jsonpatch;
 
 int main()
 {
-    jsoncons::json target = R"(
+    json doc = json::parse(R"(
         { "foo": "bar"}
-    )"_json;
+    )");
 
-    jsoncons::json patch = R"(
+    json patch = json::parse(R"(
         [
             { "op": "add", "path": "/baz", "value": "qux" },
             { "op": "add", "path": "/foo", "value": [ "bar", "baz" ] }
         ]
-    )"_json;
+    )");
 
     std::error_code ec;
-    jp::apply_patch(target,patch,ec);
+    jsonpatch::apply_patch(target,patch,ec);
 
     std::cout << pretty_print(target) << std::endl;
 }
@@ -66,25 +66,25 @@ Output:
 #include <jsoncons/json.hpp>
 #include <jsoncons_ext/jsonpatch/jsonpatch.hpp>
 
-using namespace jsoncons::literals;
-namespace jp = jsoncons::jsonpatch;
+using jsoncons::json;
+namespace jsonpatch = jsoncons::jsonpatch;
 
 int main()
 {
-    jsoncons::json target = R"(
+    json target = json::parse(R"(
         { "foo": "bar"}
-    )"_json;
+    )");
 
-    jsoncons::json patch = R"(
+    json patch = json::parse(R"(
         [
             { "op": "add", "path": "/baz", "value": "qux" },
             { "op": "add", "path": "/foo", "value": [ "bar", "baz" ] },
             { "op": "add", "path": "/baz/bat", "value": "qux" } // nonexistent target
         ]
-    )"_json;
+    )");
 
     std::error_code ec;
-    jp::apply_patch(target, patch, ec);
+    jsonpatch::apply_patch(target, patch, ec);
 
     std::cout << "(1) " << ec.message() << std::endl;
     std::cout << "(2) " << target << std::endl;

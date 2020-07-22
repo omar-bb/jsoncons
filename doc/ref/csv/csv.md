@@ -10,7 +10,7 @@ The csv extension implements decode from and encode to the [CSV format](https://
 
 [basic_csv_options](basic_csv_options.md)
 
-[csv_reader](csv_reader.md)
+[basic_csv_reader](basic_csv_reader.md)
 
 [basic_csv_encoder](basic_csv_encoder.md)
 
@@ -35,10 +35,9 @@ jsoncons allows you to work with the CSV data similarly to JSON data:
 
 - As a variant-like data structure, [basic_json](../basic_json.md) 
 
-- As a strongly typed C++ data structure
+- As a strongly typed C++ data structure that implements [json_type_traits](../json_type_traits.md)
 
-- As a stream of parse events
-
+- With [cursor-level access](doc/ref/csv/basic_csv_cursor.md) to a stream of parse events
 
 #### As a variant-like data structure
 
@@ -149,13 +148,13 @@ struct json_type_traits<Json,boost::gregorian::date>
         return boost::gregorian::from_simple_string(s);
     }
     static Json to_json(boost::gregorian::date val, 
-                        typename Json::allocator_type allocator = Json::allocator_type())
+                        typename Json::allocator_type alloc = Json::allocator_type())
     {
-        return Json(to_iso_extended_string(val), allocator);
+        return Json(to_iso_extended_string(val), alloc);
     }
 };
 
-JSONCONS_GETTER_CTOR_TRAITS_DECL(ns::fixing, index_id, observation_date, rate)
+JSONCONS_ALL_CTOR_GETTER_TRAITS(ns::fixing, index_id, observation_date, rate)
 
 int main()
 {
@@ -194,7 +193,7 @@ EUR_LIBOR_06M,2015-10-26,0.0000143
 EUR_LIBOR_06M,2015-10-27,0.0000001
 ```
 
-#### As a stream of parse events
+#### With cursor-level access
 
 ```c++
 int main()
@@ -220,7 +219,7 @@ int main()
             case staj_event_type::end_object:
                 std::cout << event.event_type() << " " << "\n";
                 break;
-            case staj_event_type::name:
+            case staj_event_type::key:
                 // Or std::string_view, if supported
                 std::cout << event.event_type() << ": " << event.get<jsoncons::string_view>() << "\n";
                 break;
@@ -244,7 +243,7 @@ int main()
                 std::cout << event.event_type() << ": " << event.get<double>() << "\n";
                 break;
             default:
-                std::cout << "Unhandled event type: " << event.event_type() << " " << "\n";;
+                std::cout << "Unhandled event type: " << event.event_type() << " " << "\n";
                 break;
         }
     }
@@ -254,27 +253,27 @@ Output:
 ```
 begin_array
 begin_object
-name: index_id
+key: index_id
 string_value: EUR_LIBOR_06M
-name: observation_date
+key: observation_date
 string_value: 2015-10-23
-name: rate
+key: rate
 double_value: 0.0000214
 end_object
 begin_object
-name: index_id
+key: index_id
 string_value: EUR_LIBOR_06M
-name: observation_date
+key: observation_date
 string_value: 2015-10-26
-name: rate
+key: rate
 double_value: 0.0000143
 end_object
 begin_object
-name: index_id
+key: index_id
 string_value: EUR_LIBOR_06M
-name: observation_date
+key: observation_date
 string_value: 2015-10-27
-name: rate
+key: rate
 double_value: 0.0000001
 end_object
 end_array
@@ -289,15 +288,13 @@ int main()
 
     csv::csv_cursor cursor(data, options);
 
-    auto it = make_array_iterator<ojson>(cursor);
-    auto end = jsoncons::end(it);
+    auto view = staj_array<ojson>(cursor);
 
     json_options print_options;
     print_options.float_format(float_chars_format::fixed);
-    while (it != end)
+    for (const auto& item : view)
     {
-        std::cout << pretty_print(*it, print_options) << "\n";
-        ++it;
+        std::cout << pretty_print(item, print_options) << "\n";
     }
 }
 ```
@@ -325,16 +322,16 @@ Or into strongly typed records:
 
 int main()
 {
-    typedef std::tuple<std::string,std::string,double> record_type;
+    using record_type = std::tuple<std::string,std::string,double>;
 
     csv::csv_options options;
     options.assume_header(true);
     csv::csv_cursor cursor(data, options);
 
-    auto it = make_array_iterator<record_type>(cursor);
+    auto view = staj_array<record_type>(cursor);
 
     std::cout << std::fixed << std::setprecision(7);
-    for (const auto& record : it)
+    for (const auto& record : view)
     {
         std::cout << std::get<0>(record) << ", " << std::get<1>(record) << ", " << std::get<2>(record) << "\n";
     }

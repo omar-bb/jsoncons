@@ -1,7 +1,7 @@
 // Copyright 2016 Daniel Parker
 // Distributed under Boost license
 
-#include "example_types.hpp"
+#include "sample_types.hpp"
 #include <cassert>
 #include <string>
 #include <vector>
@@ -145,12 +145,12 @@ struct json_type_traits<Json, own_vector>
         return v;
     }
     static Json to_json(const own_vector& val){
-		Json j;
-		for(size_t i=0;i<val.size();i+=2){
-			j[std::to_string(val[i])] = val[i + 1];
-		}
-		return j;
-	}
+        Json j;
+        for(std::size_t i=0;i<val.size();i+=2){
+            j[std::to_string(val[i])] = val[i + 1];
+        }
+        return j;
+    }
 };
 
 template <> 
@@ -160,7 +160,7 @@ struct is_json_type_traits_declared<own_vector> : public std::true_type
 
 void own_vector_extensibility_example()
 {
-    json j = json::object{ {"1",2},{"3",4} };
+    json j(json_object_arg, {{"1",2},{"3",4}});
     assert(j.is<own_vector>());
     auto v = j.as<own_vector>();
     json j2 = v;
@@ -170,7 +170,7 @@ void own_vector_extensibility_example()
 
 void templated_struct_example()
 {
-    typedef ns::TemplatedStruct<int,std::wstring> value_type;
+    using value_type = ns::TemplatedStruct<int,std::wstring>;
 
     value_type val{1, L"sss"};
 

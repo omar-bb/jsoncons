@@ -16,9 +16,9 @@
 #include <istream> // std::basic_istream
 #include <jsoncons/byte_string.hpp>
 #include <jsoncons/config/jsoncons_config.hpp>
-#include <jsoncons/json_content_handler.hpp>
+#include <jsoncons/json_visitor.hpp>
 #include <jsoncons/json_exception.hpp>
-#include <jsoncons/staj_reader.hpp>
+#include <jsoncons/staj_cursor.hpp>
 #include <jsoncons/source.hpp>
 #include <jsoncons_ext/msgpack/msgpack_parser.hpp>
 
@@ -26,14 +26,16 @@ namespace jsoncons {
 namespace msgpack {
 
 template<class Src=jsoncons::binary_stream_source,class Allocator=std::allocator<char>>
-class basic_msgpack_cursor : public basic_staj_reader<char>, private virtual ser_context
+class basic_msgpack_cursor : public basic_staj_cursor<char>, private virtual ser_context
 {
 public:
-    typedef Allocator allocator_type;
+    using source_type = Src;
+    using char_type = char;
+    using allocator_type = Allocator;
 private:
-    basic_staj_event_handler<char> event_handler_;
-
-    basic_msgpack_parser<Src> parser_;
+    basic_msgpack_parser<Src,Allocator> parser_;
+    basic_staj_visitor<char_type> cursor_visitor_;
+    basic_json_visitor2_to_visitor_adaptor<char_type,Allocator> cursor_handler_adaptor_;
     bool eof_;
 
     // Noncopyable and nonmoveable
@@ -41,24 +43,16 @@ private:
     basic_msgpack_cursor& operator=(const basic_msgpack_cursor&) = delete;
 
 public:
-    typedef string_view string_view_type;
-
-    template <class Source>
-    basic_msgpack_cursor(Source&& source)
-       : parser_(std::forward<Source>(source)),
-         eof_(false)
-    {
-        if (!done())
-        {
-            next();
-        }
-    }
+    using string_view_type = string_view;
 
     template <class Source>
     basic_msgpack_cursor(Source&& source,
-                      std::function<bool(const staj_event&, const ser_context&)> filter)
-       : parser_(std::forward<Source>(source)), event_handler_(filter),
-         eof_(false)
+                         const msgpack_decode_options& options = msgpack_decode_options(),
+                         const Allocator& alloc = Allocator())
+        : parser_(std::forward<Source>(source), options, alloc), 
+          cursor_visitor_(accept_all),
+          cursor_handler_adaptor_(cursor_visitor_, alloc),
+          eof_(false)
     {
         if (!done())
         {
@@ -69,22 +63,34 @@ public:
     // Constructors that set parse error codes
 
     template <class Source>
-    basic_msgpack_cursor(Source&& source, 
-                      std::error_code& ec)
-       : parser_(std::forward<Source>(source)),
-         eof_(false)
+    basic_msgpack_cursor(Source&& source,
+                         std::error_code& ec)
+       : basic_msgpack_cursor(std::allocator_arg, Allocator(),
+                              std::forward<Source>(source), 
+                              msgpack_decode_options(), 
+                              ec)
     {
-        if (!done())
-        {
-            next(ec);
-        }
     }
 
     template <class Source>
     basic_msgpack_cursor(Source&& source,
-                      std::function<bool(const staj_event&, const ser_context&)> filter, 
-                      std::error_code& ec)
-       : parser_(std::forward<Source>(source)), event_handler_(filter),
+                         const msgpack_decode_options& options,
+                         std::error_code& ec)
+       : basic_msgpack_cursor(std::allocator_arg, Allocator(),
+                              std::forward<Source>(source), 
+                              options, 
+                              ec)
+    {
+    }
+
+    template <class Source>
+    basic_msgpack_cursor(std::allocator_arg_t, const Allocator& alloc, 
+                         Source&& source,
+                         const msgpack_decode_options& options,
+                         std::error_code& ec)
+       : parser_(std::forward<Source>(source), options, alloc), 
+         cursor_visitor_(accept_all),
+         cursor_handler_adaptor_(cursor_visitor_, alloc),
          eof_(false)
     {
         if (!done())
@@ -98,29 +104,28 @@ public:
         return parser_.done();
     }
 
-    const basic_staj_event<char>& current() const override
+    const staj_event& current() const override
     {
-        return event_handler_.event();
+        return cursor_visitor_.event();
     }
 
-    void read_to(basic_json_content_handler<char>& handler) override
+    void read_to(basic_json_visitor<char_type>& visitor) override
     {
         std::error_code ec;
-        read_to(handler, ec);
+        read_to(visitor, ec);
         if (ec)
         {
-            throw ser_error(ec,parser_.line(),parser_.column());
+            JSONCONS_THROW(ser_error(ec,parser_.line(),parser_.column()));
         }
     }
 
-    void read_to(basic_json_content_handler<char>& handler,
+    void read_to(basic_json_visitor<char_type>& visitor,
                 std::error_code& ec) override
     {
-        if (!staj_to_saj_event(event_handler_.event(), handler, *this))
+        if (cursor_visitor_.dump(visitor, *this, ec))
         {
-            return;
+            read_next(visitor, ec);
         }
-        read_next(handler, ec);
     }
 
     void next() override
@@ -129,28 +134,13 @@ public:
         next(ec);
         if (ec)
         {
-            throw ser_error(ec,parser_.line(),parser_.column());
+            JSONCONS_THROW(ser_error(ec,parser_.line(),parser_.column()));
         }
     }
 
     void next(std::error_code& ec) override
     {
         read_next(ec);
-    }
-
-    void read_next(std::error_code& ec)
-    {
-        read_next(event_handler_, ec);
-    }
-
-    void read_next(basic_json_content_handler<char>& handler, std::error_code& ec)
-    {
-        parser_.restart();
-        while (!parser_.stopped())
-        {
-            parser_.parse(handler, ec);
-            if (ec) return;
-        }
     }
 
     const ser_context& context() const override
@@ -163,20 +153,138 @@ public:
         return eof_;
     }
 
-    size_t line() const override
+    std::size_t line() const override
     {
         return parser_.line();
     }
 
-    size_t column() const override
+    std::size_t column() const override
     {
         return parser_.column();
     }
+
+    friend
+    staj_filter_view operator|(basic_msgpack_cursor& cursor, 
+                               std::function<bool(const staj_event&, const ser_context&)> pred)
+    {
+        return staj_filter_view(cursor, pred);
+    }
+
+#if !defined(JSONCONS_NO_DEPRECATED)
+
+    template <class Source>
+    JSONCONS_DEPRECATED_MSG("Instead, use pipe syntax for filter")
+    basic_msgpack_cursor(Source&& source,
+                      std::function<bool(const staj_event&, const ser_context&)> filter,
+                      const msgpack_decode_options& options = msgpack_decode_options(),
+                      const Allocator& alloc = Allocator())
+       : parser_(std::forward<Source>(source), options, alloc), 
+         cursor_visitor_(filter), 
+         cursor_handler_adaptor_(cursor_visitor_, alloc),
+         eof_(false)
+    {
+        if (!done())
+        {
+            next();
+        }
+    }
+
+    template <class Source>
+    JSONCONS_DEPRECATED_MSG("Instead, use pipe syntax for filter")
+    basic_msgpack_cursor(Source&& source,
+                         std::function<bool(const staj_event&, const ser_context&)> filter,
+                         std::error_code& ec)
+       : basic_msgpack_cursor(std::allocator_arg, Allocator(),
+                              std::forward<Source>(source), filter, ec)
+    {
+    }
+
+    template <class Source>
+    JSONCONS_DEPRECATED_MSG("Instead, use pipe syntax for filter")
+    basic_msgpack_cursor(std::allocator_arg_t, const Allocator& alloc, 
+                         Source&& source,
+                         std::function<bool(const staj_event&, const ser_context&)> filter,
+                         std::error_code& ec)
+       : parser_(std::forward<Source>(source), alloc), 
+         cursor_visitor_(filter),
+         cursor_handler_adaptor_(cursor_visitor_, alloc),
+         eof_(false)
+    {
+        if (!done())
+        {
+            next(ec);
+        }
+    }
+
+    JSONCONS_DEPRECATED_MSG("Instead, use read_to(basic_json_visitor<char_type>&)")
+    void read(basic_json_visitor<char_type>& visitor)
+    {
+        read_to(visitor);
+    }
+
+    JSONCONS_DEPRECATED_MSG("Instead, use read_to(basic_json_visitor<char_type>&, std::error_code&)")
+    void read(basic_json_visitor<char_type>& visitor,
+                 std::error_code& ec) 
+    {
+        read_to(visitor, ec);
+    }
+#endif
 private:
+    static bool accept_all(const staj_event&, const ser_context&) 
+    {
+        return true;
+    }
+
+    void read_next(std::error_code& ec)
+    {
+        if (cursor_visitor_.in_available())
+        {
+            cursor_visitor_.send_available(ec);
+        }
+        else
+        {
+            parser_.restart();
+            while (!parser_.stopped())
+            {
+                parser_.parse(cursor_handler_adaptor_, ec);
+                if (ec) return;
+            }
+        }
+    }
+
+    void read_next(basic_json_visitor<char_type>& visitor, std::error_code& ec)
+    {
+        {
+            struct resource_wrapper
+            {
+                basic_json_visitor2_to_visitor_adaptor<char_type,Allocator>& adaptor;
+                basic_json_visitor<char_type>& original;
+
+                resource_wrapper(basic_json_visitor2_to_visitor_adaptor<char_type,Allocator>& adaptor,
+                                 basic_json_visitor<char_type>& visitor)
+                    : adaptor(adaptor), original(adaptor.destination())
+                {
+                    adaptor.destination(visitor);
+                }
+
+                ~resource_wrapper()
+                {
+                    adaptor.destination(original);
+                }
+            } wrapper(cursor_handler_adaptor_, visitor);
+
+            parser_.restart();
+            while (!parser_.stopped())
+            {
+                parser_.parse(cursor_handler_adaptor_, ec);
+                if (ec) return;
+            }
+        }
+    }
 };
 
-typedef basic_msgpack_cursor<jsoncons::binary_stream_source> msgpack_stream_cursor;
-typedef basic_msgpack_cursor<jsoncons::bytes_source> msgpack_bytes_cursor;
+using msgpack_stream_cursor = basic_msgpack_cursor<jsoncons::binary_stream_source>;
+using msgpack_bytes_cursor = basic_msgpack_cursor<jsoncons::bytes_source>;
 
 } // namespace msgpack
 } // namespace jsoncons

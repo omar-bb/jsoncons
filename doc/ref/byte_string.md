@@ -33,13 +33,13 @@ Member type                         |Definition
 
     byte_string(const byte_string& s); 
 
-    byte_string(byte_string&& s); 
+    byte_string(byte_string&& s) noexcept; 
 
 #### Assignment
 
     byte_string& operator=(const byte_string& s);
 
-    byte_string& operator=(byte_string&& s);
+    byte_string& operator=(byte_string&& s) noexcept;
 
 #### Iterators
 
@@ -57,9 +57,7 @@ Member type                         |Definition
 
 #### Capacity
 
-    size_t size() const;
-
-    size_t length() const;
+    std::size_t size() const;
 
 #### Non-member functions
 
@@ -75,13 +73,13 @@ Member type                         |Definition
 #### Byte string from initializer list
 
 ```c++
-json j(byte_string({'H','e','l','l','o'}));
-byte_string bs = j.as<byte_string>();
+json j(byte_string{'H','e','l','l','o'});
+byte_string bytes = j.as<byte_string>();
 
-std::cout << "(1) "<< bs << "\n\n";
+std::cout << "(1) "<< bytes << "\n\n";
 
 std::cout << "(2) ";
-for (auto b : bs)
+for (auto b : bytes)
 {
     std::cout << (char)b;
 }
@@ -102,13 +100,13 @@ Output:
 #### Byte string from char array
 
 ```c++
-json j(byte_string("Hello"));
-byte_string bs = j.as<byte_string>();
+json j(byte_string{'H','e','l','l','o'});
+byte_string bytes = j.as<byte_string>();
 
-std::cout << "(1) "<< bs << "\n\n";
+std::cout << "(1) "<< bytes << "\n\n";
 
 std::cout << "(2) ";
-for (auto b : bs)
+for (auto b : bytes)
 {
     std::cout << (char)b;
 }

@@ -23,8 +23,8 @@ CBOR standard date/time strings are decoded into jsoncons strings tagged with `s
 jsoncons strings tagged with `semantic_tag::datetime` are encoded into CBOR standard date/time strings.
 
 1 (epoch time)  
-CBOR epoch times are decoded into jsoncons int64_t, uint64_t and double and tagged with `semantic_tag::timestamp`. 
-jsoncons int64_t, uint64_t and double tagged with `semantic_tag::timestamp` are encoded into CBOR epoch time.
+CBOR epoch times are decoded into jsoncons int64_t, uint64_t and double and tagged with `semantic_tag::epoch_time`. 
+jsoncons int64_t, uint64_t and double tagged with `semantic_tag::epoch_time` are encoded into CBOR epoch time.
 
 2,3 (positive and negative bignum)  
 CBOR positive and negative bignums are decoded into jsoncons strings and tagged with `semantic_tag::bigint`.
@@ -70,35 +70,47 @@ jsoncons strings tagged with `semantic_tag::base64url` and `semantic_tag::base64
 256, 25 [stringref-namespace, stringref](http://cbor.schmorp.de/stringref)  
 Tags 256 and 25 are automatically decoded when detected. They are encoded when CBOR option `pack_strings` is set to true.
 
-### jsoncons - CBOR mappings
+64-87 [Tags for Typed Arrays](https://tools.ietf.org/html/rfc8746)  
+Tags 64-82 (excepting float128 big endian) and 84-86 (excepting float128 little endian) are automatically decoded when detected. They may be encoded when CBOR option `use_typed_arrays` is set to true.
 
-jsoncons data item|jsoncons tag|CBOR data item|CBOR tag
---------------|------------------|---------------|--------
-null          |                  | null |&#160;
-null          | undefined        | undefined |&#160;
-bool          |                  | true or false |&#160;
-int64         |                  | unsigned or negative integer |&#160;
-int64         | timestamp        | unsigned or negative integer | 1 (epoch-based date/time)
-uint64        |                  | unsigned integer |&#160;
-uint64        | timestamp        | unsigned integer | 1 (epoch-based date/time)
-double        |                  | half-precision float, float, or double |&#160;
-double        | timestamp        | double | 1 (epoch-based date/time)
-string        |                  | string |&#160;
-string        | bigint      | byte string | 2 (positive bignum) or 2 (negative bignum)  
-string        | bigdec      | array | 4 (decimal fraction)
-string        | bigfloat      | array | 5 (bigfloat)
-string        | datetime        | string | 0 (date/time string) 
-string        | uri              | string | 32 (uri)
-string        | base64url        | string | 33 (base64url)
-string        | base64           | string | 34 (base64)
-byte_string   |                  | byte string |&#160;
-byte_string   | base64url        | byte string | 21 (Expected conversion to base64url encoding)
-byte_string   | base64           | byte string | 22 (Expected conversion to base64 encoding)
-byte_string   | base16           | byte string | 23 (Expected conversion to base16 encoding)
-array         |                  | array |&#160;
-object        |                  | map |&#160;
+#### Mappings between CBOR and jsoncons data items
+
+CBOR data item|CBOR tag                                         | jsoncons data item|jsoncons tag  
+---------------|------------------------------------------------| --------------|------------------
+ null |&#160;                                                   | null          |                  
+ undefined |&#160;                                              | null          | undefined        
+ true or false |&#160;                                          | bool          |                  
+ unsigned or negative integer |&#160;                           | int64         |                  
+ unsigned or negative integer | 1 (epoch-based date/time)       | int64         | timestamp        
+ unsigned integer |&#160;                                       | uint64        |                  
+ unsigned integer | 1 (epoch-based date/time)                   | uint64        | timestamp        
+ half-precision float, float, or double |&#160;                 | half          |                  
+ float or double |&#160;                                        | double        |                  
+ double | 1 (epoch-based date/time)                             | double        | timestamp        
+ string |&#160;                                                 | string        |                  
+ byte string | 2 (positive bignum) or 2 (negative bignum)       | string        | bigint           
+ array | 4 (decimal fraction)                                   | string        | bigdec           
+ array | 5 (bigfloat)                                           | string        | bigfloat         
+ string | 0 (date/time string)                                  | string        | datetime         
+ string | 32 (uri)                                              | string        | uri              
+ string | 33 (base64url)                                        | string        | base64url        
+ string | 34 (base64)                                           | string        | base64           
+ byte string |&#160;                                            | byte_string   |                  
+ byte string | 21 (Expected conversion to base64url encoding)   | byte_string   | base64url        
+ byte string | 22 (Expected conversion to base64 encoding)      | byte_string   | base64           
+ byte string | 23 (Expected conversion to base16 encoding)      | byte_string   | base16           
+ array |&#160;                                                  | array         |                  
+ map |&#160;                                                    | object        |                  
 
 ## Examples
+
+[Working with CBOR data](#A1)  
+[Encode and decode of a large typed array](#A2)  
+[CBOR and basic_json](#A3)  
+[Byte string with unknown CBOR tag (unknown to jsoncons)](#A4)  
+[Query CBOR with JSONPath](#A5)  
+
+<div id="A1"/> 
 
 ### Working with CBOR data
 
@@ -109,7 +121,7 @@ For the examples below you need to include some header files and initialize a bu
 #include <iostream>
 #include <jsoncons/json.hpp>
 #include <jsoncons_ext/cbor/cbor.hpp>
-#include <jsoncons_ext/jsonpath/json_query.hpp>
+#include <jsoncons_ext/jsonpath/jsonpath.hpp>
 
 using namespace jsoncons; // for convenience
 
@@ -143,11 +155,11 @@ const std::vector<uint8_t> data = {
 
 jsoncons allows you to work with the CBOR data similarly to JSON data:
 
-- As a variant-like data structure, [basic_json](doc/ref/basic_json.md) 
+- As a variant-like data structure, [basic_json](../basic_json.md) 
 
-- As a strongly typed C++ data structure
+- As a strongly typed C++ data structure that implements [json_type_traits](../json_type_traits.md) 
 
-- As a stream of parse events
+- With [cursor-level access](doc/ref/cbor/basic_cbor_cursor.md) to a stream of parse events
 
 #### As a variant-like data structure
 
@@ -174,15 +186,9 @@ int main()
     std::cout << pretty_print(result) << "\n\n";
 
     // Serialize back to CBOR
-    std::cout << "(4)\n";
     std::vector<uint8_t> buffer;
     cbor::encode_cbor(j, buffer);
-    for (auto c : buffer) 
-    {
-        std::cout << std::hex << std::setprecision(2) << std::setw(2) 
-                  << std::noshowbase << std::setfill('0') << static_cast<int>(c) << ' ';
-    }
-    std::cout << "\n\n";
+    std::cout << "(4)\n" << byte_string_view(buffer) << "\n\n";
 }
 ```
 Output:
@@ -194,8 +200,8 @@ Output:
 ]
 
 (2)
-50 75 73 73 (n/a)
-50 75 73 73 (base64)
+50,75,73,73 (n/a)
+50,75,73,73 (base64)
 
 (3)
 [
@@ -204,7 +210,7 @@ Output:
 ]
 
 (4)
-82 83 63 66 6f 6f 44 50 75 73 73 c5 82 20 03 83 63 62 61 72 d6 44 50 75 73 73 c4 82 38 1c c2 4d 01 8e e9 0f f6 c3 73 e0 ee 4e 3f 0a d2
+82,83,63,66,6f,6f,44,50,75,73,73,c5,82,20,03,83,63,62,61,72,d6,44,50,75,73,73,c4,82,38,1c,c2,4d,01,8e,e9,0f,f6,c3,73,e0,ee,4e,3f,0a,d2
 ```
 
 #### As a strongly typed C++ data structure
@@ -223,31 +229,25 @@ int main()
     std::cout << "\n";
 
     // Serialize back to CBOR
-    std::cout << "(2)\n";
     std::vector<uint8_t> buffer;
     cbor::encode_cbor(val, buffer);
-    for (auto c : buffer) 
-    {
-        std::cout << std::hex << std::setprecision(2) << std::setw(2) 
-                  << std::noshowbase << std::setfill('0') << static_cast<int>(c) << ' ';
-    }
-    std::cout << "\n\n";
+    std::cout << "(2)\n" << byte_string_view(buffer) << "\n\n";
 }
 ```
 Output:
 ```
 (1)
-foo, 50 75 73 73, 0x3p-1
-bar, 50 75 73 73, 1.23456789012345678901234567890
+foo, 50,75,73,73, 0x3p-1
+bar, 50,75,73,73, 1.23456789012345678901234567890
 
 (2)
-82 83 63 66 6f 6f 44 50 75 73 73 66 30 78 33 70 2d 31 83 63 62 61 72 44 50 75 73 73 78 1f 31 2e 32 33 34 35 36 37 38 39 30 31 32 33 34 35 36 37 38 39 30 31 32 33 34 35 36 37 38 39 30
+82,9f,63,66,6f,6f,44,50,75,73,73,66,30,78,33,70,2d,31,ff,9f,63,62,61,72,44,50,75,73,73,78,1f,31,2e,32,33,34,35,36,37,38,39,30,31,32,33,34,35,36,37,38,39,30,31,32,33,34,35,36,37,38,39,30,ff
 ```
 
 Note that when decoding the bigfloat and decimal fraction into a `std::string`, we lose the semantic information
 that the variant like data structure preserved with a tag, so serializing back to CBOR produces a text string.
 
-#### As a stream of parse events
+#### With cursor-level access
 
 ```c++
 int main()
@@ -270,7 +270,7 @@ int main()
             case staj_event_type::end_object:
                 std::cout << event.event_type() << " " << "(" << event.tag() << ")\n";
                 break;
-            case staj_event_type::name:
+            case staj_event_type::key:
                 // Or std::string_view, if supported
                 std::cout << event.event_type() << ": " << event.get<jsoncons::string_view>() << " " << "(" << event.tag() << ")\n";
                 break;
@@ -293,6 +293,7 @@ int main()
             case staj_event_type::uint64_value:
                 std::cout << event.event_type() << ": " << event.get<uint64_t>() << " " << "(" << event.tag() << ")\n";
                 break;
+            case staj_event_type::half_value:
             case staj_event_type::double_value:
                 std::cout << event.event_type() << ": "  << event.get<double>() << " " << "(" << event.tag() << ")\n";
                 break;
@@ -308,18 +309,18 @@ Output:
 begin_array (n/a)
 begin_array (n/a)
 string_value: foo (n/a)
-byte_string_value: 50 75 73 73 (n/a)
+byte_string_value: 50,75,73,73 (n/a)
 string_value: 0x3p-1 (bigfloat)
 end_array (n/a)
 begin_array (n/a)
 string_value: bar (n/a)
-byte_string_value: 50 75 73 73 (base64)
+byte_string_value: 50,75,73,73 (base64)
 string_value: 1.23456789012345678901234567890 (bigdec)
 end_array (n/a)
 end_array (n/a)
 ```
 
-You can apply a filter to the stream, for example,
+You can apply a filter to a cursor using the pipe syntax, for example,
 
 ```c++
 int main()
@@ -329,10 +330,12 @@ int main()
         return (ev.tag() == semantic_tag::bigdec) || (ev.tag() == semantic_tag::bigfloat);  
     };
 
-    cbor::cbor_bytes_cursor cursor(data, filter);
-    for (; !cursor.done(); cursor.next())
+    cbor::cbor_bytes_cursor cursor(data);
+
+    auto filtered_c = cursor | filter;
+    for (; !filtered_c.done(); filtered_c.next())
     {
-        const auto& event = cursor.current();
+        const auto& event = filtered_c.current();
         switch (event.event_type())
         {
             case staj_event_type::string_value:
@@ -351,6 +354,54 @@ Output:
 string_value: 0x3p-1 (bigfloat)
 string_value: 1.23456789012345678901234567890 (bigdec)
 ```
+
+<div id="A2"/> 
+
+### Encode and decode of a large typed array
+
+```c++
+#include <jsoncons_ext/cbor/cbor.hpp>
+#include <iomanip>
+#include <cassert>
+
+using namespace jsoncons;
+
+int main()
+{
+    std::vector<float> x(15000000); 
+    for (size_t i = 0; i < x.size(); ++i)
+    {
+        x[i] = static_cast<float>(i);
+    }
+    cbor::cbor_options options;
+    options.use_typed_arrays(true);
+
+    std::vector<uint8_t> buf;
+    cbor::encode_cbor(x, buf, options);
+
+    std::cout << "first 19 bytes:\n\n";
+    std::cout << byte_string_view(buf).substr(0, 19) << "\n\n";
+/*
+    0xd8,0x55 -- Tag 85 (float32 little endian Typed Array)
+    0x5a - byte string (four-byte uint32_t for n, and then  n bytes follow)
+      03 93 87 00 -- 60000000
+        00 00 00 00 -- 0.0f
+        00 00 80 3f -- 1.0f
+        00 00 00 40 -- 2.0f
+*/
+    auto y = cbor::decode_cbor<std::vector<float>>(buf);
+
+    assert(y == x);
+}
+```
+Output:
+```
+first 19 bytes:
+
+d8,55,5a,03,93,87,00,00,00,00,00,00,00,80,3f,00,00,00,40
+```
+
+<div id="A3"/> 
 
 ### CBOR and basic_json
 
@@ -429,11 +480,67 @@ Marilyn C, 0.9
 (3) Marilyn C
 ```
 
+<div id="A4"/> 
+
+### Byte string with unknown CBOR tag (unknown to jsoncons)
+
+```c++
+#include <jsoncons/json.hpp>
+#include <jsoncons_ext/cbor/cbor.hpp>
+
+int main()
+{
+    // Create some CBOR
+    std::vector<uint8_t> buffer;
+    cbor::cbor_bytes_encoder encoder(buffer);
+
+    std::vector<uint8_t> bstr = {'f','o','o','b','a','r'};
+    encoder.byte_string_value(bstr, 274); // byte string with tag 274
+    encoder.flush();
+
+    std::cout << "(1)\n" << byte_string_view(buffer) << "\n\n";
+
+    /*
+        d9, // tag
+            01,12, // 274
+        46, // byte string, length 6
+            66,6f,6f,62,61,72 // 'f','o','o','b','a','r'         
+    */ 
+
+    json j = cbor::decode_cbor<json>(buffer);
+
+    std::cout << "(2)\n" << pretty_print(j) << "\n\n";
+    std::cout << "(3) " << j.tag() << "("  << j.ext_tag() << ")\n\n";
+
+    // Get byte string as a std::vector<uint8_t>
+    auto bstr2 = j.as<std::vector<uint8_t>>();
+
+    std::vector<uint8_t> buffer2;
+    cbor::encode_cbor(j, buffer2);
+    std::cout << "(4)\n" << byte_string_view(buffer2.data(),buffer2.size()) << "\n";
+}
+```
+Output:
+```
+(1)
+d9,01,12,46,66,6f,6f,62,61,72
+
+(2)
+"Zm9vYmFy"
+
+(3) ext(274)
+
+(4)
+d9,01,12,46,66,6f,6f,62,61,72
+```
+
+<div id="A5"/> 
+
 ### Query CBOR with JSONPath
 ```c++
 #include <jsoncons/json.hpp>
 #include <jsoncons_ext/cbor/cbor.hpp>
-#include <jsoncons_ext/jsonpath/json_query.hpp>
+#include <jsoncons_ext/jsonpath/jsonpath.hpp>
 #include <iostream>
 #include <iomanip>
 #include <cassert>
@@ -443,7 +550,7 @@ using namespace jsoncons; // For convenience
 int main()
 {
     // Construct a json array of numbers
-    json j = json::array();
+    json j(json_array_arg);
 
     j.emplace_back(5.0);
 
@@ -473,13 +580,7 @@ int main()
     std::vector<uint8_t> v;
     cbor::encode_cbor(j,v);
 
-    std::cout << "(3)\n";
-    for (auto c : v)
-    {
-        std::cout << std::hex << std::setprecision(2) << std::setw(2)
-                  << std::setfill('0') << static_cast<int>(c);
-    }
-    std::cout << "\n\n";
+    std::cout << "(3)\n" << byte_string_view(v) << "\n\n";
 /*
     85 -- Array of length 5     
       fa -- float 
@@ -510,6 +611,7 @@ int main()
     std::cout << "(4)\n";
     json result = jsonpath::json_query(other,"$[?(@ < 1.5)]");
     std::cout << pretty_print(result) << "\n\n";
+}
 ```
 Output:
 ```
@@ -519,7 +621,7 @@ Output:
     7.1e-05,
     "-18446744073709551617",
     "1.23456789012345678901234567890",
-    [-1, 3]
+    "0x3p-1"
 ]
 
 (2)
@@ -527,10 +629,10 @@ Output:
 7.1e-05, 7.1e-05
 -18446744073709551617, -1.84467440737096e+19
 1.23456789012345678901234567890, 1.23456789012346
-1.5, 1.5
+0x3p-1, 1.5
 
 (3)
-85fa40a00000fb3f129cbab649d389c349010000000000000000c482381cc24d018ee90ff6c373e0ee4e3f0ad2c5822003
+85,fa,40,a0,00,00,fb,3f,12,9c,ba,b6,49,d3,89,c3,49,01,00,00,00,00,00,00,00,00,c4,82,38,1c,c2,4d,01,8e,e9,0f,f6,c3,73,e0,ee,4e,3f,0a,d2,c5,82,20,03
 
 (4)
 [
@@ -540,3 +642,6 @@ Output:
 ]
 ```
 
+### See also
+
+[byte_string_view](../byte_string_view.md)

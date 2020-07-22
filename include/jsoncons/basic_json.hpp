@@ -22,24 +22,218 @@
 #include <type_traits> // std::enable_if
 #include <istream> // std::basic_istream
 #include <jsoncons/json_fwd.hpp>
+#include <jsoncons/json_type.hpp>
 #include <jsoncons/config/version.hpp>
+#include <jsoncons/json_type.hpp>
 #include <jsoncons/json_exception.hpp>
 #include <jsoncons/pretty_print.hpp>
 #include <jsoncons/json_container_types.hpp>
-#include <jsoncons/bignum.hpp>
+#include <jsoncons/bigint.hpp>
 #include <jsoncons/json_options.hpp>
 #include <jsoncons/json_encoder.hpp>
 #include <jsoncons/json_decoder.hpp>
 #include <jsoncons/json_reader.hpp>
 #include <jsoncons/json_type_traits.hpp>
+#include <jsoncons/byte_string.hpp>
 #include <jsoncons/json_error.hpp>
-#include <jsoncons/detail/heap_only_string.hpp>
+#include <jsoncons/detail/string_wrapper.hpp>
+
+namespace jsoncons { 
+
+namespace detail {
+
+template <class T>
+struct is_basic_json : std::false_type
+{};
+
+template <class CharT, class ImplementationPolicy, class Allocator>
+struct is_basic_json<basic_json<CharT,ImplementationPolicy,Allocator>> : std::true_type
+{};
+
+} // namespace detail
+
+    
+    template <typename T>
+    using is_basic_json = jsoncons::detail::is_basic_json<typename std::decay<T>::type>;
+
+namespace detail {
+
+    template <class Iterator,class Enable = void>
+    class random_access_iterator_wrapper
+    {
+    };
+
+    template <class Iterator>
+    class random_access_iterator_wrapper<Iterator,
+             typename std::enable_if<std::is_same<typename std::iterator_traits<Iterator>::iterator_category, 
+                                                  std::random_access_iterator_tag>::value>::type> 
+    { 
+        Iterator it_; 
+        bool has_value_;
+
+        template <class Iter,class Enable> 
+        friend class random_access_iterator_wrapper;
+    public:
+        using iterator_category = std::random_access_iterator_tag;
+
+        using value_type = typename std::iterator_traits<Iterator>::value_type;
+        using difference_type = typename std::iterator_traits<Iterator>::difference_type;
+        using pointer = typename std::iterator_traits<Iterator>::pointer;
+        using reference = typename std::iterator_traits<Iterator>::reference;
+    
+        random_access_iterator_wrapper() : it_(), has_value_(false) 
+        { 
+        }
+
+        explicit random_access_iterator_wrapper(Iterator ptr) : it_(ptr), has_value_(true)  
+        {
+        }
+
+        random_access_iterator_wrapper(const random_access_iterator_wrapper&) = default;
+        random_access_iterator_wrapper(random_access_iterator_wrapper&&) = default;
+        random_access_iterator_wrapper& operator=(const random_access_iterator_wrapper&) = default;
+        random_access_iterator_wrapper& operator=(random_access_iterator_wrapper&&) = default;
+
+        template <class Iter,
+                  class=typename std::enable_if<!std::is_same<Iter,Iterator>::value && std::is_convertible<Iter,Iterator>::value>::type>
+        random_access_iterator_wrapper(const random_access_iterator_wrapper<Iter>& other)
+            : it_(other.it_), has_value_(true)
+        {
+        }
+
+        operator Iterator() const
+        { 
+            return it_; 
+        }
+
+        reference operator*() const 
+        {
+            return *it_;
+        }
+
+        pointer operator->() const 
+        {
+            return &(*it_);
+        }
+
+        random_access_iterator_wrapper& operator++() 
+        {
+            ++it_;
+            return *this;
+        }
+
+        random_access_iterator_wrapper operator++(int) 
+        {
+            random_access_iterator_wrapper temp = *this;
+            ++*this;
+            return temp;
+        }
+
+        random_access_iterator_wrapper& operator--() 
+        {
+            --it_;
+            return *this;
+        }
+
+        random_access_iterator_wrapper operator--(int) 
+        {
+            random_access_iterator_wrapper temp = *this;
+            --*this;
+            return temp;
+        }
+
+        random_access_iterator_wrapper& operator+=(const difference_type offset) 
+        {
+            it_ += offset;
+            return *this;
+        }
+
+        random_access_iterator_wrapper operator+(const difference_type offset) const 
+        {
+            random_access_iterator_wrapper temp = *this;
+            return temp += offset;
+        }
+
+        random_access_iterator_wrapper& operator-=(const difference_type offset) 
+        {
+            return *this += -offset;
+        }
+
+        random_access_iterator_wrapper operator-(const difference_type offset) const 
+        {
+            random_access_iterator_wrapper temp = *this;
+            return temp -= offset;
+        }
+
+        difference_type operator-(const random_access_iterator_wrapper& rhs) const noexcept
+        {
+            return it_ - rhs.it_;
+        }
+
+        reference operator[](const difference_type offset) const noexcept
+        {
+            return *(*this + offset);
+        }
+
+        bool operator==(const random_access_iterator_wrapper& rhs) const noexcept
+        {
+            if (!has_value_ || !rhs.has_value_)
+            {
+                return has_value_ == rhs.has_value_ ? true : false;
+            }
+            else
+            {
+                return it_ == rhs.it_;
+            }
+        }
+
+        bool operator!=(const random_access_iterator_wrapper& rhs) const noexcept
+        {
+            return !(*this == rhs);
+        }
+
+        bool operator<(const random_access_iterator_wrapper& rhs) const noexcept
+        {
+            if (!has_value_ || !rhs.has_value_)
+            {
+                return has_value_ == rhs.has_value_ ? false :(has_value_ ? false : true);
+            }
+            else
+            {
+                return it_ < rhs.it_;
+            }
+        }
+
+        bool operator>(const random_access_iterator_wrapper& rhs) const noexcept
+        {
+            return rhs < *this;
+        }
+
+        bool operator<=(const random_access_iterator_wrapper& rhs) const noexcept
+        {
+            return !(rhs < *this);
+        }
+
+        bool operator>=(const random_access_iterator_wrapper& rhs) const noexcept
+        {
+            return !(*this < rhs);
+        }
+
+        inline 
+        friend random_access_iterator_wrapper<Iterator> operator+(
+            difference_type offset, random_access_iterator_wrapper<Iterator> next) 
+        {
+            return next += offset;
+        }
+    };
+} // namespace detail
+} // namespace jsoncons
 
 namespace jsoncons {
 
 struct sorted_policy 
 {
-    static constexpr bool preserve_order = false;
+    using key_order = sort_key_order;
 
     template <class T,class Allocator>
     using sequence_container_type = std::vector<T,Allocator>;
@@ -47,1557 +241,634 @@ struct sorted_policy
     template <class CharT, class CharTraits, class Allocator>
     using key_storage = std::basic_string<CharT, CharTraits,Allocator>;
 
-    template <class CharT, class CharTraits, class Allocator>
-    using string_storage = std::basic_string<CharT, CharTraits,Allocator>;
-
-    typedef default_json_parsing parse_error_handler_type;
+    using parse_error_handler_type = default_json_parsing;
 };
 
 struct preserve_order_policy : public sorted_policy
 {
-    static constexpr bool preserve_order = true;
+    using key_order = preserve_key_order;
 };
 
-template <typename IteratorT>
+template <class IteratorT, class ConstIteratorT>
 class range 
 {
-    IteratorT first_;
-    IteratorT last_;
+public:
+    using iterator = IteratorT;
+    using const_iterator = ConstIteratorT;
+    using reverse_iterator = std::reverse_iterator<IteratorT>;
+    using const_reverse_iterator = std::reverse_iterator<ConstIteratorT>;
+private:
+    iterator first_;
+    iterator last_;
 public:
     range(const IteratorT& first, const IteratorT& last)
         : first_(first), last_(last)
     {
     }
 
-public:
-    IteratorT begin()
+    iterator begin()
     {
         return first_;
     }
-    IteratorT end()
+    iterator end()
     {
         return last_;
     }
+    const_iterator cbegin()
+    {
+        return first_;
+    }
+    const_iterator cend()
+    {
+        return last_;
+    }
+    reverse_iterator rbegin()
+    {
+        return reverse_iterator(last_);
+    }
+    reverse_iterator rend()
+    {
+        return reverse_iterator(first_);
+    }
+    const_reverse_iterator crbegin()
+    {
+        return reverse_iterator(last_);
+    }
+    const_reverse_iterator crend()
+    {
+        return reverse_iterator(first_);
+    }
 };
 
-enum class storage_type : uint8_t 
-{
-    null_val = 0x00,
-    bool_val = 0x01,
-    int64_val = 0x02,
-    uint64_val = 0x03,
-    double_val = 0x04,
-    short_string_val = 0x05,
-    long_string_val = 0x06,
-    byte_string_val = 0x07,
-    array_val = 0x08,
-    empty_object_val = 0x09,
-    object_val = 0x0a,
-    tag_val = 0x0b
-};
+template <class T>
+using
+json_proxy_t = typename T::jsoncons_json_parent_type;
+
+// is_proxy
+template<class T, class Enable = void>
+struct is_proxy : std::false_type {};
+
+// is_proxy
+template<class T>
+struct is_proxy<T,
+    typename std::enable_if<detail::is_detected<json_proxy_t,T>::value>::type
+> : std::true_type {};
 
 template <class CharT, class ImplementationPolicy, class Allocator>
 class basic_json
 {
 public:
 
-    typedef Allocator allocator_type; 
+    using allocator_type = Allocator; 
 
-    typedef ImplementationPolicy implementation_policy;
+    using implementation_policy = ImplementationPolicy;
 
-    typedef typename ImplementationPolicy::parse_error_handler_type parse_error_handler_type;
+    using parse_error_handler_type = typename ImplementationPolicy::parse_error_handler_type;
 
-    typedef CharT char_type;
-    typedef std::char_traits<char_type> char_traits_type;
-    typedef basic_string_view<char_type,char_traits_type> string_view_type;
+    using char_type = CharT;
+    using char_traits_type = std::char_traits<char_type>;
+    using string_view_type = jsoncons::basic_string_view<char_type,char_traits_type>;
 
-    typedef typename std::allocator_traits<allocator_type>:: template rebind_alloc<char_type> char_allocator_type;
+    using char_allocator_type = typename std::allocator_traits<allocator_type>:: template rebind_alloc<char_type>;
 
-    typedef std::basic_string<char_type,char_traits_type,char_allocator_type> key_type;
+    using key_type = std::basic_string<char_type,char_traits_type,char_allocator_type>;
 
 
-    typedef basic_json& reference;
-    typedef const basic_json& const_reference;
-    typedef basic_json* pointer;
-    typedef const basic_json* const_pointer;
+    using reference = basic_json&;
+    using const_reference = const basic_json&;
+    using pointer = basic_json*;
+    using const_pointer = const basic_json*;
 
-    typedef key_value<key_type,basic_json> key_value_type;
+    using key_value_type = key_value<key_type,basic_json>;
 
 #if !defined(JSONCONS_NO_DEPRECATED)
     JSONCONS_DEPRECATED_MSG("no replacement") typedef basic_json value_type;
-    JSONCONS_DEPRECATED_MSG("no replacemment") typedef basic_json json_type;
     JSONCONS_DEPRECATED_MSG("no replacement") typedef std::basic_string<char_type> string_type;
-    JSONCONS_DEPRECATED_MSG("instead, use key_value_type") typedef key_value_type kvp_type;
-    JSONCONS_DEPRECATED_MSG("instead, use key_value_type") typedef key_value_type member_type;
+    JSONCONS_DEPRECATED_MSG("Instead, use key_value_type") typedef key_value_type kvp_type;
+    JSONCONS_DEPRECATED_MSG("Instead, use key_value_type") typedef key_value_type member_type;
 #endif
 
-    typedef typename std::allocator_traits<allocator_type>:: template rebind_alloc<uint8_t> byte_allocator_type;
-    using byte_string_storage_type = typename implementation_policy::template sequence_container_type<uint8_t, byte_allocator_type>;
+    using array = json_array<basic_json>;
 
-    typedef json_array<basic_json> array;
+    using key_value_allocator_type = typename std::allocator_traits<allocator_type>:: template rebind_alloc<key_value_type>;                       
 
-    typedef typename std::allocator_traits<allocator_type>:: template rebind_alloc<key_value_type> key_value_allocator_type;
+    using object = json_object<key_type,basic_json>;
 
-    typedef json_object<key_type,basic_json> object;
+    using object_iterator = jsoncons::detail::random_access_iterator_wrapper<typename object::iterator>;              
+    using const_object_iterator = jsoncons::detail::random_access_iterator_wrapper<typename object::const_iterator>;                    
+    using array_iterator = typename array::iterator;
+    using const_array_iterator = typename array::const_iterator;
 
-    typedef typename std::allocator_traits<Allocator>:: template rebind_alloc<array> array_allocator;
-    typedef typename std::allocator_traits<Allocator>:: template rebind_alloc<object> object_allocator;
+private:
 
-    typedef typename object::iterator object_iterator;
-    typedef typename object::const_iterator const_object_iterator;
-    typedef typename array::iterator array_iterator;
-    typedef typename array::const_iterator const_array_iterator;
+    static constexpr uint8_t major_type_shift = 0x04;
+    static constexpr uint8_t additional_information_mask = (1U << 4) - 1;
 
-    struct variant
+    class common_storage final
     {
-        class data_base
-        {
-            static const uint8_t major_type_shift = 0x04;
-            static const uint8_t additional_information_mask = (1U << 4) - 1;
-
-            uint8_t ext_type_;
-        public:
-            data_base(uint8_t type)
-                : ext_type_(type)
-            {}
-
-            data_base(storage_type data_type, semantic_tag semantic_type)
-                : ext_type_((static_cast<uint8_t>(data_type) << major_type_shift) | static_cast<uint8_t>(semantic_type))
-            {}
-
-            uint8_t ext_type() const 
-            {
-                return ext_type_;
-            }
-
-            storage_type type() const 
-            {
-
-                uint8_t value = ext_type_ >> major_type_shift;
-                return static_cast<storage_type>(value);
-            }
-
-            semantic_tag tag() const 
-            {
-                uint8_t value = ext_type_ & additional_information_mask;
-                return static_cast<semantic_tag>(value);
-            }
-        };
-
-        class null_data final : public data_base
-        {
-        public:
-            null_data()
-                : data_base(storage_type::null_val, semantic_tag::none)
-            {
-            }
-            null_data(semantic_tag tag)
-                : data_base(storage_type::null_val, tag)
-            {
-            }
-        };
-
-        class empty_object_data final : public data_base
-        {
-        public:
-            empty_object_data(semantic_tag tag)
-                : data_base(storage_type::empty_object_val, tag)
-            {
-            }
-        };  
-
-        class bool_data final : public data_base
-        {
-            bool val_;
-        public:
-            bool_data(bool val, semantic_tag tag)
-                : data_base(storage_type::bool_val, tag),val_(val)
-            {
-            }
-
-            bool_data(const bool_data& val)
-                : data_base(val.ext_type()),val_(val.val_)
-            {
-            }
-
-            bool value() const
-            {
-                return val_;
-            }
-
-        };
-
-        class int64_data final : public data_base
-        {
-            int64_t val_;
-        public:
-            int64_data(int64_t val, 
-                       semantic_tag tag = semantic_tag::none)
-                : data_base(storage_type::int64_val, tag),val_(val)
-            {
-            }
-
-            int64_data(const int64_data& val)
-                : data_base(val.ext_type()),val_(val.val_)
-            {
-            }
-
-            int64_t value() const
-            {
-                return val_;
-            }
-        };
-
-        class uint64_data final : public data_base
-        {
-            uint64_t val_;
-        public:
-            uint64_data(uint64_t val, 
-                        semantic_tag tag = semantic_tag::none)
-                : data_base(storage_type::uint64_val, tag),val_(val)
-            {
-            }
-
-            uint64_data(const uint64_data& val)
-                : data_base(val.ext_type()),val_(val.val_)
-            {
-            }
-
-            uint64_t value() const
-            {
-                return val_;
-            }
-        };
-
-        class double_data final : public data_base
-        {
-            double val_;
-        public:
-            double_data(double val, 
-                        semantic_tag tag = semantic_tag::none)
-                : data_base(storage_type::double_val, tag), 
-                  val_(val)
-            {
-            }
-
-            double_data(const double_data& val)
-                : data_base(val.ext_type()),
-                  val_(val.val_)
-            {
-            }
-
-            double value() const
-            {
-                return val_;
-            }
-        };
-
-        class short_string_data final : public data_base
-        {
-            static const size_t capacity = 14/sizeof(char_type);
-            uint8_t length_;
-            char_type data_[capacity];
-        public:
-            static const size_t max_length = (14 / sizeof(char_type)) - 1;
-
-            short_string_data(semantic_tag tag, const char_type* p, uint8_t length)
-                : data_base(storage_type::short_string_val, tag), length_(length)
-            {
-                JSONCONS_ASSERT(length <= max_length);
-                std::memcpy(data_,p,length*sizeof(char_type));
-                data_[length] = 0;
-            }
-
-            short_string_data(const short_string_data& val)
-                : data_base(val.ext_type()), length_(val.length_)
-            {
-                std::memcpy(data_,val.data_,val.length_*sizeof(char_type));
-                data_[length_] = 0;
-            }
-
-            uint8_t length() const
-            {
-                return length_;
-            }
-
-            const char_type* data() const
-            {
-                return data_;
-            }
-
-            const char_type* c_str() const
-            {
-                return data_;
-            }
-        };
-
-        // long_string_data
-        class long_string_data final : public data_base
-        {
-            typedef typename jsoncons::detail::heap_only_string_factory<char_type, Allocator>::string_pointer pointer;
-
-            pointer ptr_;
-        public:
-
-            long_string_data(semantic_tag tag, const char_type* data, size_t length, const Allocator& a)
-                : data_base(storage_type::long_string_val, tag)
-            {
-                ptr_ = jsoncons::detail::heap_only_string_factory<char_type,Allocator>::create(data,length,a);
-            }
-
-            long_string_data(const long_string_data& val)
-                : data_base(val.ext_type())
-            {
-                ptr_ = jsoncons::detail::heap_only_string_factory<char_type,Allocator>::create(val.data(),val.length(),val.get_allocator());
-            }
-
-            long_string_data(long_string_data&& val) noexcept
-                : data_base(val.ext_type()), ptr_(nullptr)
-            {
-                std::swap(val.ptr_,ptr_);
-            }
-
-            long_string_data(const long_string_data& val, const Allocator& a)
-                : data_base(val.ext_type())
-            {
-                ptr_ = jsoncons::detail::heap_only_string_factory<char_type,Allocator>::create(val.data(),val.length(),a);
-            }
-
-            ~long_string_data()
-            {
-                if (ptr_ != nullptr)
-                {
-                    jsoncons::detail::heap_only_string_factory<char_type,Allocator>::destroy(ptr_);
-                }
-            }
-
-            void swap(long_string_data& val)
-            {
-                std::swap(val.ptr_,ptr_);
-            }
-
-            const char_type* data() const
-            {
-                return ptr_->data();
-            }
-
-            const char_type* c_str() const
-            {
-                return ptr_->c_str();
-            }
-
-            size_t length() const
-            {
-                return ptr_->length();
-            }
-
-            allocator_type get_allocator() const
-            {
-                return ptr_->get_allocator();
-            }
-        };
-
-        // byte_string_data
-        class byte_string_data final : public data_base
-        {
-            typedef typename std::allocator_traits<Allocator>:: template rebind_alloc<byte_string_storage_type> string_holder_allocator_type;
-            typedef typename std::allocator_traits<string_holder_allocator_type>::pointer pointer;
-
-            pointer ptr_;
-
-            template <typename... Args>
-            void create(string_holder_allocator_type allocator, Args&& ... args)
-            {
-                typename std::allocator_traits<Allocator>:: template rebind_alloc<byte_string_storage_type> alloc(allocator);
-                ptr_ = alloc.allocate(1);
-                try
-                {
-                    std::allocator_traits<string_holder_allocator_type>:: template rebind_traits<byte_string_storage_type>::construct(alloc, jsoncons::detail::to_plain_pointer(ptr_), std::forward<Args>(args)...);
-                }
-                catch (...)
-                {
-                    alloc.deallocate(ptr_,1);
-                    throw;
-                }
-            }
-        public:
-
-            byte_string_data(semantic_tag semantic_type, 
-                             const uint8_t* data, size_t length, 
-                             const Allocator& a)
-                : data_base(storage_type::byte_string_val, semantic_type)
-            {
-                create(string_holder_allocator_type(a), data, data+length, a);
-            }
-
-            byte_string_data(const byte_string_data& val)
-                : data_base(val.ext_type())
-            {
-                create(val.ptr_->get_allocator(), *(val.ptr_));
-            }
-
-            byte_string_data(byte_string_data&& val) noexcept
-                : data_base(val.ext_type()), ptr_(nullptr)
-            {
-                std::swap(val.ptr_,ptr_);
-            }
-
-            byte_string_data(const byte_string_data& val, const Allocator& a)
-                : data_base(val.ext_type())
-            { 
-                create(string_holder_allocator_type(a), *(val.ptr_), a);
-            }
-
-            ~byte_string_data()
-            {
-                if (ptr_ != nullptr)
-                {
-                    typename std::allocator_traits<string_holder_allocator_type>:: template rebind_alloc<byte_string_storage_type> alloc(ptr_->get_allocator());
-                    std::allocator_traits<string_holder_allocator_type>:: template rebind_traits<byte_string_storage_type>::destroy(alloc, jsoncons::detail::to_plain_pointer(ptr_));
-                    alloc.deallocate(ptr_,1);
-                }
-            }
-
-            void swap(byte_string_data& val)
-            {
-                std::swap(val.ptr_,ptr_);
-            }
-
-            const uint8_t* data() const
-            {
-                return ptr_->data();
-            }
-
-            size_t length() const
-            {
-                return ptr_->size();
-            }
-
-            const uint8_t* begin() const
-            {
-                return ptr_->data();
-            }
-
-            const uint8_t* end() const
-            {
-                return ptr_->data() + ptr_->size();
-            }
-
-            allocator_type get_allocator() const
-            {
-                return ptr_->get_allocator();
-            }
-        };
-
-        // array_data
-        class array_data final : public data_base
-        {
-            typedef typename std::allocator_traits<array_allocator>::pointer pointer;
-            pointer ptr_;
-
-            template <typename... Args>
-            void create(array_allocator allocator, Args&& ... args)
-            {
-                array_allocator alloc(allocator);
-                ptr_ = alloc.allocate(1);
-                try
-                {
-                    std::allocator_traits<array_allocator>::construct(alloc, jsoncons::detail::to_plain_pointer(ptr_), std::forward<Args>(args)...);
-                }
-                catch (...)
-                {
-                    alloc.deallocate(ptr_,1);
-                    throw;
-                }
-            }
-        public:
-            array_data(const array& val, semantic_tag tag)
-                : data_base(storage_type::array_val, tag)
-            {
-                create(val.get_allocator(), val);
-            }
-
-            array_data(const array& val, semantic_tag tag, const Allocator& a)
-                : data_base(storage_type::array_val, tag)
-            {
-                create(array_allocator(a), val, a);
-            }
-
-            array_data(const array_data& val)
-                : data_base(val.ext_type())
-            {
-                create(val.ptr_->get_allocator(), *(val.ptr_));
-            }
-
-            array_data(array_data&& val) noexcept
-                : data_base(val.ext_type()), ptr_(nullptr)
-            {
-                std::swap(val.ptr_, ptr_);
-            }
-
-            array_data(const array_data& val, const Allocator& a)
-                : data_base(val.ext_type())
-            {
-                create(array_allocator(a), *(val.ptr_), a);
-            }
-            ~array_data()
-            {
-                if (ptr_ != nullptr)
-                {
-                    typename std::allocator_traits<array_allocator>:: template rebind_alloc<array> alloc(ptr_->get_allocator());
-                    std::allocator_traits<array_allocator>:: template rebind_traits<array>::destroy(alloc, jsoncons::detail::to_plain_pointer(ptr_));
-                    alloc.deallocate(ptr_,1);
-                }
-            }
-
-            allocator_type get_allocator() const
-            {
-                return ptr_->get_allocator();
-            }
-
-            void swap(array_data& val)
-            {
-                std::swap(val.ptr_,ptr_);
-            }
-
-            array& value()
-            {
-                return *ptr_;
-            }
-
-            const array& value() const
-            {
-                return *ptr_;
-            }
-        };
-
-        // object_data
-        class object_data final : public data_base
-        {
-            typedef typename std::allocator_traits<object_allocator>::pointer pointer;
-            pointer ptr_;
-
-            template <typename... Args>
-            void create(const Allocator& allocator, Args&& ... args)
-            {
-                object_allocator alloc(allocator);
-                ptr_ = alloc.allocate(1);
-                try
-                {
-                    std::allocator_traits<object_allocator>::construct(alloc, jsoncons::detail::to_plain_pointer(ptr_), std::forward<Args>(args)...);
-                }
-                catch (...)
-                {
-                    alloc.deallocate(ptr_,1);
-                    throw;
-                }
-            }
-        public:
-            explicit object_data(const object& val, semantic_tag tag)
-                : data_base(storage_type::object_val, tag)
-            {
-                create(val.get_allocator(), val);
-            }
-
-            explicit object_data(const object& val, semantic_tag tag, const Allocator& a)
-                : data_base(storage_type::object_val, tag)
-            {
-                create(object_allocator(a), val, a);
-            }
-
-            explicit object_data(const object_data& val)
-                : data_base(val.ext_type())
-            {
-                create(val.ptr_->get_allocator(), *(val.ptr_));
-            }
-
-            explicit object_data(object_data&& val) noexcept
-                : data_base(val.ext_type()), ptr_(nullptr)
-            {
-                std::swap(val.ptr_,ptr_);
-            }
-
-            explicit object_data(const object_data& val, const Allocator& a)
-                : data_base(val.ext_type())
-            {
-                create(object_allocator(a), *(val.ptr_), a);
-            }
-
-            ~object_data()
-            {
-                if (ptr_ != nullptr)
-                {
-                    typename std::allocator_traits<Allocator>:: template rebind_alloc<object> alloc(ptr_->get_allocator());
-                    std::allocator_traits<Allocator>:: template rebind_traits<object>::destroy(alloc, jsoncons::detail::to_plain_pointer(ptr_));
-                    alloc.deallocate(ptr_,1);
-                }
-            }
-
-            void swap(object_data& val)
-            {
-                std::swap(val.ptr_,ptr_);
-            }
-
-            object& value()
-            {
-                return *ptr_;
-            }
-
-            const object& value() const
-            {
-                return *ptr_;
-            }
-
-            allocator_type get_allocator() const
-            {
-                return ptr_->get_allocator();
-            }
-        };
-
-    private:
-        static const size_t data_size = static_max<sizeof(uint64_data),sizeof(double_data),sizeof(short_string_data), sizeof(long_string_data), sizeof(array_data), sizeof(object_data)>::value;
-        static const size_t data_align = static_max<alignof(uint64_data),alignof(double_data),alignof(short_string_data),alignof(long_string_data),alignof(array_data),alignof(object_data)>::value;
-
-        typedef typename std::aligned_storage<data_size,data_align>::type data_t;
-
-        data_t data_;
     public:
-		variant(semantic_tag tag) : data_{}
+        uint8_t storage_:4;
+        uint8_t length_:4;
+        semantic_tag tag_;
+    };
+
+    class null_storage final
+    {
+    public:
+        uint8_t storage_:4;
+        uint8_t length_:4;
+        semantic_tag tag_;
+
+        null_storage(semantic_tag tag = semantic_tag::none)
+            : storage_(static_cast<uint8_t>(storage_kind::null_value)), length_(0), tag_(tag)
         {
-            new(reinterpret_cast<void*>(&data_))empty_object_data(tag);
+        }
+    };
+
+    class empty_object_storage final
+    {
+    public:
+        uint8_t storage_:4;
+        uint8_t length_:4;
+        semantic_tag tag_;
+
+        empty_object_storage(semantic_tag tag)
+            : storage_(static_cast<uint8_t>(storage_kind::empty_object_value)), length_(0), tag_(tag)
+        {
+        }
+    };  
+
+    class bool_storage final
+    {
+    public:
+        uint8_t storage_:4;
+        uint8_t length_:4;
+        semantic_tag tag_;
+    private:
+        bool val_;
+    public:
+        bool_storage(bool val, semantic_tag tag)
+            : storage_(static_cast<uint8_t>(storage_kind::bool_value)), length_(0), tag_(tag),
+              val_(val)
+        {
         }
 
-        explicit variant(null_type, semantic_tag tag) : data_{}
+        bool value() const
         {
-            new(reinterpret_cast<void*>(&data_))null_data(tag);
+            return val_;
         }
 
-		explicit variant(bool val, semantic_tag tag) : data_{}
+    };
+
+    class int64_storage final
+    {
+    public:
+        uint8_t storage_:4;
+        uint8_t length_:4;
+        semantic_tag tag_;
+    private:
+        int64_t val_;
+    public:
+        int64_storage(int64_t val, 
+                   semantic_tag tag = semantic_tag::none)
+            : storage_(static_cast<uint8_t>(storage_kind::int64_value)), length_(0), tag_(tag),
+              val_(val)
         {
-            new(reinterpret_cast<void*>(&data_))bool_data(val,tag);
-        }
-		explicit variant(int64_t val, semantic_tag tag) : data_{}
-        {
-            new(reinterpret_cast<void*>(&data_))int64_data(val, tag);
-        }
-		explicit variant(uint64_t val, semantic_tag tag) : data_{}
-        {
-            new(reinterpret_cast<void*>(&data_))uint64_data(val, tag);
         }
 
-		variant(double val, semantic_tag tag) : data_{}
+        int64_t value() const
         {
-            new(reinterpret_cast<void*>(&data_))double_data(val, tag);
+            return val_;
+        }
+    };
+
+    class uint64_storage final
+    {
+    public:
+        uint8_t storage_:4;
+        uint8_t length_:4;
+        semantic_tag tag_;
+    private:
+        uint64_t val_;
+    public:
+        uint64_storage(uint64_t val, 
+                    semantic_tag tag = semantic_tag::none)
+            : storage_(static_cast<uint8_t>(storage_kind::uint64_value)), length_(0), tag_(tag),
+              val_(val)
+        {
         }
 
-        variant(const char_type* s, size_t length, semantic_tag tag)
+        uint64_t value() const
         {
-            if (length <= short_string_data::max_length)
+            return val_;
+        }
+    };
+
+    class half_storage final
+    {
+    public:
+        uint8_t storage_:4;
+        uint8_t length_:4;
+        semantic_tag tag_;
+    private:
+        uint16_t val_;
+    public:
+        half_storage(uint16_t val, semantic_tag tag = semantic_tag::none)
+            : storage_(static_cast<uint8_t>(storage_kind::half_value)), length_(0), tag_(tag),
+              val_(val)
+        {
+        }
+
+        uint16_t value() const
+        {
+            return val_;
+        }
+    };
+
+    class double_storage final
+    {
+    public:
+        uint8_t storage_:4;
+        uint8_t length_:4;
+        semantic_tag tag_;
+    private:
+        double val_;
+    public:
+        double_storage(double val, 
+                       semantic_tag tag = semantic_tag::none)
+            : storage_(static_cast<uint8_t>(storage_kind::double_value)), length_(0), tag_(tag),
+              val_(val)
+        {
+        }
+
+        double value() const
+        {
+            return val_;
+        }
+    };
+
+    class short_string_storage final
+    {
+    public:
+        uint8_t storage_:4;
+        uint8_t length_:4;
+        semantic_tag tag_;
+    private:
+        static constexpr size_t capacity = (2*sizeof(uint64_t) - 2*sizeof(uint8_t))/sizeof(char_type);
+        char_type data_[capacity];
+    public:
+        static constexpr size_t max_length = capacity - 1;
+
+        short_string_storage(semantic_tag tag, const char_type* p, uint8_t length)
+            : storage_(static_cast<uint8_t>(storage_kind::short_string_value)), length_(length), tag_(tag)
+        {
+            JSONCONS_ASSERT(length <= max_length);
+            std::memcpy(data_,p,length*sizeof(char_type));
+            data_[length] = 0;
+        }
+
+        short_string_storage(const short_string_storage& val)
+            : storage_(val.storage_), length_(val.length_), tag_(val.tag_)
+        {
+            std::memcpy(data_,val.data_,val.length_*sizeof(char_type));
+            data_[length_] = 0;
+        }
+
+        uint8_t length() const
+        {
+            return length_;
+        }
+
+        const char_type* data() const
+        {
+            return data_;
+        }
+
+        const char_type* c_str() const
+        {
+            return data_;
+        }
+    };
+
+    // long_string_storage
+    class long_string_storage final
+    {
+    public:
+        uint8_t storage_:4;
+        uint8_t length_:4;
+        semantic_tag tag_;
+    private:
+        jsoncons::detail::string_wrapper<char_type,Allocator> s_;
+    public:
+
+        long_string_storage(semantic_tag tag, const char_type* data, std::size_t length, const Allocator& a)
+            : storage_(static_cast<uint8_t>(storage_kind::long_string_value)), length_(0), tag_(tag),
+              s_(data, length, a)
+        {
+        }
+
+        long_string_storage(const long_string_storage& val)
+            : storage_(val.storage_), tag_(val.tag_),
+              s_(val.s_)
+        {
+        }
+
+        long_string_storage(long_string_storage&& val) noexcept
+            : storage_(val.storage_), tag_(val.tag_),
+              s_(nullptr)
+        {
+            swap(val);
+        }
+
+        long_string_storage(const long_string_storage& val, const Allocator& a)
+            : storage_(val.storage_), tag_(val.tag_),
+              s_(val.s_, a)
+        {
+        }
+
+        ~long_string_storage() noexcept
+        {
+        }
+
+        void swap(long_string_storage& val) noexcept
+        {
+            s_.swap(val.s_);
+        }
+
+        const char_type* data() const
+        {
+            return s_.data();
+        }
+
+        const char_type* c_str() const
+        {
+            return s_.c_str();
+        }
+
+        std::size_t length() const
+        {
+            return s_.length();
+        }
+
+        allocator_type get_allocator() const
+        {
+            return s_.get_allocator();
+        }
+    };
+
+    // byte_string_storage
+    class byte_string_storage final
+    {
+    public:
+        uint8_t storage_:4;
+        uint8_t length_:4;
+        semantic_tag tag_;
+    private:
+        jsoncons::detail::tagged_string_wrapper<uint8_t,Allocator> s_;
+    public:
+
+        byte_string_storage(semantic_tag tag, const uint8_t* data, std::size_t length, uint64_t ext_tag, const Allocator& alloc)
+            : storage_(static_cast<uint8_t>(storage_kind::byte_string_value)), length_(0), tag_(tag),
+              s_(data, length, ext_tag, alloc)
+        {
+        }
+
+        byte_string_storage(const byte_string_storage& val)
+            : storage_(val.storage_), tag_(val.tag_),
+              s_(val.s_)
+        {
+        }
+
+        byte_string_storage(byte_string_storage&& val) noexcept
+            : storage_(val.storage_), tag_(val.tag_),
+              s_(nullptr)
+        {
+            swap(val);
+        }
+
+        byte_string_storage(const byte_string_storage& val, const Allocator& a)
+            : storage_(val.storage_), tag_(val.tag_),
+              s_(val.s_, a)
+        {
+        }
+
+        ~byte_string_storage() noexcept
+        {
+        }
+
+        void swap(byte_string_storage& val) noexcept
+        {
+            s_.swap(val.s_);
+        }
+
+        const uint8_t* data() const
+        {
+            return s_.data();
+        }
+
+        std::size_t length() const
+        {
+            return s_.length();
+        }
+
+        uint64_t ext_tag() const
+        {
+            return s_.tag();
+        }
+
+        allocator_type get_allocator() const
+        {
+            return s_.get_allocator();
+        }
+    };
+
+    // array_storage
+    class array_storage final
+    {
+    public:
+        uint8_t storage_:4;
+        uint8_t length_:4;
+        semantic_tag tag_;
+    private:
+        using array_allocator = typename std::allocator_traits<Allocator>:: template rebind_alloc<array>;
+        using pointer = typename std::allocator_traits<array_allocator>::pointer;
+
+        pointer ptr_;
+
+        template <typename... Args>
+        void create(array_allocator alloc, Args&& ... args)
+        {
+            ptr_ = std::allocator_traits<array_allocator>::allocate(alloc, 1);
+            JSONCONS_TRY
             {
-                new(reinterpret_cast<void*>(&data_))short_string_data(tag, s, static_cast<uint8_t>(length));
+                std::allocator_traits<array_allocator>::construct(alloc, jsoncons::detail::to_plain_pointer(ptr_), std::forward<Args>(args)...);
             }
-            else
+            JSONCONS_CATCH(...)
             {
-                new(reinterpret_cast<void*>(&data_))long_string_data(tag, s, length, char_allocator_type());
-            }
-        }
-
-		variant(const char_type* s, size_t length, semantic_tag tag, const Allocator& alloc) : data_{}
-        {
-            if (length <= short_string_data::max_length)
-            {
-                new(reinterpret_cast<void*>(&data_))short_string_data(tag, s, static_cast<uint8_t>(length));
-            }
-            else
-            {
-                new(reinterpret_cast<void*>(&data_))long_string_data(tag, s, length, char_allocator_type(alloc));
-            }
-        }
-
-        variant(const byte_string_view& bs, semantic_tag tag) : data_{}
-        {
-            new(reinterpret_cast<void*>(&data_))byte_string_data(tag, bs.data(), bs.length(), byte_allocator_type());
-        }
-
-        variant(const byte_string_view& bs, semantic_tag tag, const Allocator& allocator) : data_{}
-        {
-            new(reinterpret_cast<void*>(&data_))byte_string_data(tag, bs.data(), bs.length(), allocator);
-        }
-
-        variant(const basic_bignum<byte_allocator_type>& n) : data_{}
-        {
-            std::basic_string<char_type> s;
-            n.dump(s);
-
-            if (s.length() <= short_string_data::max_length)
-            {
-                new(reinterpret_cast<void*>(&data_))short_string_data(semantic_tag::bigint, s.data(), static_cast<uint8_t>(s.length()));
-            }
-            else
-            {
-                new(reinterpret_cast<void*>(&data_))long_string_data(semantic_tag::bigint, s.data(), s.length(), char_allocator_type());
-            }
-        }
-
-        variant(const basic_bignum<byte_allocator_type>& n, const Allocator& allocator) : data_{}
-        {
-            std::basic_string<char_type> s;
-            n.dump(s);
-
-            if (s.length() <= short_string_data::max_length)
-            {
-                new(reinterpret_cast<void*>(&data_))short_string_data(semantic_tag::bigint, s.data(), static_cast<uint8_t>(s.length()));
-            }
-            else
-            {
-                new(reinterpret_cast<void*>(&data_))long_string_data(semantic_tag::bigint, s.data(), s.length(), char_allocator_type(allocator));
-            }
-        }
-		variant(const object& val, semantic_tag tag) : data_{}
-        {
-            new(reinterpret_cast<void*>(&data_))object_data(val, tag);
-        }
-        variant(const object& val, semantic_tag tag, const Allocator& alloc) : data_{}
-        {
-            new(reinterpret_cast<void*>(&data_))object_data(val, tag, alloc);
-        }
-        variant(const array& val, semantic_tag tag) : data_{}
-        {
-            new(reinterpret_cast<void*>(&data_))array_data(val, tag);
-        }
-        variant(const array& val, semantic_tag tag, const Allocator& alloc) : data_{}
-        {
-            new(reinterpret_cast<void*>(&data_))array_data(val, tag, alloc);
-        }
-
-        variant(const variant& val)
-        {
-            Init_(val);
-        }
-
-        variant(const variant& val, const Allocator& allocator)
-        {
-            Init_(val,allocator);
-        }
-
-        variant(variant&& val) noexcept
-        {
-            Init_rv_(std::forward<variant>(val));
-        }
-
-        variant(variant&& val, const Allocator& allocator) noexcept
-        {
-            Init_rv_(std::forward<variant>(val), allocator,
-                     typename std::allocator_traits<Allocator>::propagate_on_container_move_assignment());
-        }
-
-        ~variant()
-        {
-            Destroy_();
-        }
-
-        void Destroy_()
-        {
-            switch (type())
-            {
-                case storage_type::long_string_val:
-                    reinterpret_cast<long_string_data*>(&data_)->~long_string_data();
-                    break;
-                case storage_type::byte_string_val:
-                    reinterpret_cast<byte_string_data*>(&data_)->~byte_string_data();
-                    break;
-                case storage_type::array_val:
-                    reinterpret_cast<array_data*>(&data_)->~array_data();
-                    break;
-                case storage_type::object_val:
-                    reinterpret_cast<object_data*>(&data_)->~object_data();
-                    break;
-                default:
-                    break;
-            }
-        }
-
-        variant& operator=(const variant& val)
-        {
-            if (this !=&val)
-            {
-                Destroy_();
-                switch (val.type())
-                {
-                    case storage_type::null_val:
-                        new(reinterpret_cast<void*>(&data_))null_data(*(val.null_data_cast()));
-                        break;
-                    case storage_type::empty_object_val:
-                        new(reinterpret_cast<void*>(&data_))empty_object_data(*(val.empty_object_data_cast()));
-                        break;
-                    case storage_type::bool_val:
-                        new(reinterpret_cast<void*>(&data_))bool_data(*(val.bool_data_cast()));
-                        break;
-                    case storage_type::int64_val:
-                        new(reinterpret_cast<void*>(&data_))int64_data(*(val.int64_data_cast()));
-                        break;
-                    case storage_type::uint64_val:
-                        new(reinterpret_cast<void*>(&data_))uint64_data(*(val.uint64_data_cast()));
-                        break;
-                    case storage_type::double_val:
-                        new(reinterpret_cast<void*>(&data_))double_data(*(val.double_data_cast()));
-                        break;
-                    case storage_type::short_string_val:
-                        new(reinterpret_cast<void*>(&data_))short_string_data(*(val.short_string_data_cast()));
-                        break;
-                    case storage_type::long_string_val:
-                        new(reinterpret_cast<void*>(&data_))long_string_data(*(val.string_data_cast()));
-                        break;
-                    case storage_type::byte_string_val:
-                        new(reinterpret_cast<void*>(&data_))byte_string_data(*(val.byte_string_data_cast()));
-                        break;
-                    case storage_type::array_val:
-                        new(reinterpret_cast<void*>(&data_))array_data(*(val.array_data_cast()));
-                        break;
-                    case storage_type::object_val:
-                        new(reinterpret_cast<void*>(&data_))object_data(*(val.object_data_cast()));
-                        break;
-                    default:
-                        JSONCONS_UNREACHABLE();
-                        break;
-                }
-            }
-            return *this;
-        }
-
-        variant& operator=(variant&& val) noexcept
-        {
-            if (this !=&val)
-            {
-                swap(val);
-            }
-            return *this;
-        }
-
-        storage_type type() const
-        {
-            return reinterpret_cast<const data_base*>(&data_)->type();
-        }
-
-        semantic_tag tag() const
-        {
-            return reinterpret_cast<const data_base*>(&data_)->tag();
-        }
-
-        const null_data* null_data_cast() const
-        {
-            return reinterpret_cast<const null_data*>(&data_);
-        }
-
-        const empty_object_data* empty_object_data_cast() const
-        {
-            return reinterpret_cast<const empty_object_data*>(&data_);
-        }
-
-        const bool_data* bool_data_cast() const
-        {
-            return reinterpret_cast<const bool_data*>(&data_);
-        }
-
-        const int64_data* int64_data_cast() const
-        {
-            return reinterpret_cast<const int64_data*>(&data_);
-        }
-
-        const uint64_data* uint64_data_cast() const
-        {
-            return reinterpret_cast<const uint64_data*>(&data_);
-        }
-
-        const double_data* double_data_cast() const
-        {
-            return reinterpret_cast<const double_data*>(&data_);
-        }
-
-        const short_string_data* short_string_data_cast() const
-        {
-            return reinterpret_cast<const short_string_data*>(&data_);
-        }
-
-        long_string_data* string_data_cast()
-        {
-            return reinterpret_cast<long_string_data*>(&data_);
-        }
-
-        const long_string_data* string_data_cast() const
-        {
-            return reinterpret_cast<const long_string_data*>(&data_);
-        }
-
-        byte_string_data* byte_string_data_cast()
-        {
-            return reinterpret_cast<byte_string_data*>(&data_);
-        }
-
-        const byte_string_data* byte_string_data_cast() const
-        {
-            return reinterpret_cast<const byte_string_data*>(&data_);
-        }
-
-        object_data* object_data_cast()
-        {
-            return reinterpret_cast<object_data*>(&data_);
-        }
-
-        const object_data* object_data_cast() const
-        {
-            return reinterpret_cast<const object_data*>(&data_);
-        }
-
-        array_data* array_data_cast()
-        {
-            return reinterpret_cast<array_data*>(&data_);
-        }
-
-        const array_data* array_data_cast() const
-        {
-            return reinterpret_cast<const array_data*>(&data_);
-        }
-
-        size_t size() const
-        {
-            switch (type())
-            {
-                case storage_type::array_val:
-                    return array_data_cast()->value().size();
-                case storage_type::object_val:
-                    return object_data_cast()->value().size();
-                default:
-                    return 0;
-            }
-        }
-
-        string_view_type as_string_view() const
-        {
-            switch (type())
-            {
-                case storage_type::short_string_val:
-                    return string_view_type(short_string_data_cast()->data(),short_string_data_cast()->length());
-                case storage_type::long_string_val:
-                    return string_view_type(string_data_cast()->data(),string_data_cast()->length());
-                default:
-                    JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not a string"));
-            }
-        }
-
-        template <typename BAllocator=std::allocator<uint8_t>>
-        basic_byte_string<BAllocator> as_byte_string() const
-        {
-            switch (type())
-            {
-                case storage_type::short_string_val:
-                case storage_type::long_string_val:
-                {
-                    switch (tag())
-                    {
-                        case semantic_tag::base16:
-                        {
-                            basic_byte_string<BAllocator> bs;
-                            auto s = as_string_view();
-                            decode_base16(s.begin(), s.end(), bs);
-                            return bs;
-                        }
-                        case semantic_tag::base64:
-                        {
-                            basic_byte_string<BAllocator> bs;
-                            auto s = as_string_view();
-                            decode_base64(s.begin(), s.end(), bs);
-                            return bs;
-                        }
-                        case semantic_tag::base64url:
-                        {
-                            basic_byte_string<BAllocator> bs;
-                            auto s = as_string_view();
-                            decode_base64url(s.begin(), s.end(), bs);
-                            return bs;
-                        }
-                        default:
-                            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not a byte string"));
-                    }
-                    break;
-                }
-                case storage_type::byte_string_val:
-                    return basic_byte_string<BAllocator>(byte_string_data_cast()->data(),byte_string_data_cast()->length());
-                default:
-                    JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not a byte string"));
+                std::allocator_traits<array_allocator>::deallocate(alloc, ptr_,1);
+                JSONCONS_RETHROW;
             }
         }
 
-        byte_string_view as_byte_string_view() const
+        void destroy() noexcept
         {
-            switch (type())
+            array_allocator alloc(ptr_->get_allocator());
+            std::allocator_traits<array_allocator>::destroy(alloc, jsoncons::detail::to_plain_pointer(ptr_));
+            std::allocator_traits<array_allocator>::deallocate(alloc, ptr_,1);
+        }
+    public:
+        array_storage(const array& val, semantic_tag tag)
+            : storage_(static_cast<uint8_t>(storage_kind::array_value)), length_(0), tag_(tag)
+        {
+            create(val.get_allocator(), val);
+        }
+
+        array_storage(const array& val, semantic_tag tag, const Allocator& a)
+            : storage_(val.storage_), length_(0), tag_(val.tag_)
+        {
+            create(array_allocator(a), val, a);
+        }
+
+        array_storage(const array_storage& val)
+            : storage_(val.storage_), length_(0), tag_(val.tag_)
+        {
+            create(val.ptr_->get_allocator(), *(val.ptr_));
+        }
+
+        array_storage(array_storage&& val) noexcept
+            : storage_(val.storage_), length_(0), tag_(val.tag_),
+              ptr_(nullptr)
+        {
+            std::swap(val.ptr_, ptr_);
+        }
+
+        array_storage(const array_storage& val, const Allocator& a)
+            : storage_(val.storage_), length_(0), tag_(val.tag_)
+        {
+            create(array_allocator(a), *(val.ptr_), a);
+        }
+        ~array_storage() noexcept
+        {
+            if (ptr_ != nullptr)
             {
-            case storage_type::byte_string_val:
-                return byte_string_view(byte_string_data_cast()->data(),byte_string_data_cast()->length());
-            default:
-                JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not a byte string"));
+                destroy();
             }
         }
 
-        template <class UserAllocator=std::allocator<uint8_t>>
-        basic_bignum<UserAllocator> as_bignum() const
+        allocator_type get_allocator() const
         {
-            switch (type())
+            return ptr_->get_allocator();
+        }
+
+        void swap(array_storage& val) noexcept
+        {
+            std::swap(val.ptr_,ptr_);
+        }
+
+        array& value()
+        {
+            return *ptr_;
+        }
+
+        const array& value() const
+        {
+            return *ptr_;
+        }
+    };
+
+    // object_storage
+    class object_storage final
+    {
+    public:
+        uint8_t storage_:4;
+        uint8_t length_:4;
+        semantic_tag tag_;
+    private:
+        using object_allocator = typename std::allocator_traits<Allocator>:: template rebind_alloc<object>;
+        using pointer = typename std::allocator_traits<object_allocator>::pointer;
+
+        pointer ptr_;
+
+        template <typename... Args>
+        void create(object_allocator alloc, Args&& ... args)
+        {
+            ptr_ = std::allocator_traits<object_allocator>::allocate(alloc, 1);
+            JSONCONS_TRY
             {
-                case storage_type::short_string_val:
-                case storage_type::long_string_val:
-                    if (!jsoncons::detail::is_integer(as_string_view().data(), as_string_view().length()))
-                    {
-                        JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not an integer"));
-                    }
-                    return basic_bignum<UserAllocator>(as_string_view().data(), as_string_view().length());
-                case storage_type::double_val:
-                    return basic_bignum<UserAllocator>(double_data_cast()->value());
-                case storage_type::int64_val:
-                    return basic_bignum<UserAllocator>(int64_data_cast()->value());
-                case storage_type::uint64_val:
-                    return basic_bignum<UserAllocator>(uint64_data_cast()->value());
-                case storage_type::bool_val:
-                    return basic_bignum<UserAllocator>(bool_data_cast()->value() ? 1 : 0);
-                default:
-                    JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not a bignum"));
+                std::allocator_traits<object_allocator>::construct(alloc, jsoncons::detail::to_plain_pointer(ptr_), std::forward<Args>(args)...);
+            }
+            JSONCONS_CATCH(...)
+            {
+                std::allocator_traits<object_allocator>::deallocate(alloc, ptr_,1);
+                JSONCONS_RETHROW;
+            }
+        }
+    public:
+        explicit object_storage(const object& val, semantic_tag tag)
+            : storage_(static_cast<uint8_t>(storage_kind::object_value)), length_(0), tag_(tag)
+        {
+            create(val.get_allocator(), val);
+        }
+
+        explicit object_storage(const object& val, semantic_tag tag, const Allocator& a)
+            : storage_(val.storage_), length_(0), tag_(val.tag_)
+        {
+            create(object_allocator(a), val, a);
+        }
+
+        explicit object_storage(const object_storage& val)
+            : storage_(val.storage_), length_(0), tag_(val.tag_)
+        {
+            create(val.ptr_->get_allocator(), *(val.ptr_));
+        }
+
+        explicit object_storage(object_storage&& val) noexcept
+            : storage_(val.storage_), length_(0), tag_(val.tag_),
+              ptr_(nullptr)
+        {
+            std::swap(val.ptr_,ptr_);
+        }
+
+        explicit object_storage(const object_storage& val, const Allocator& a)
+            : storage_(val.storage_), tag_(val.tag_)
+        {
+            create(object_allocator(a), *(val.ptr_), a);
+        }
+
+        ~object_storage() noexcept
+        {
+            if (ptr_ != nullptr)
+            {
+                destroy();
             }
         }
 
-        bool operator==(const variant& rhs) const
+        void swap(object_storage& val) noexcept
         {
-            if (this ==&rhs)
-            {
-                return true;
-            }
-            switch (type())
-            {
-                case storage_type::null_val:
-                    switch (rhs.type())
-                    {
-                        case storage_type::null_val:
-                            return true;
-                        default:
-                            return false;
-                    }
-                    break;
-                case storage_type::empty_object_val:
-                    switch (rhs.type())
-                    {
-                        case storage_type::empty_object_val:
-                            return true;
-                        case storage_type::object_val:
-                            return rhs.size() == 0;
-                        default:
-                            return false;
-                    }
-                    break;
-                case storage_type::bool_val:
-                    switch (rhs.type())
-                    {
-                        case storage_type::bool_val:
-                            return bool_data_cast()->value() == rhs.bool_data_cast()->value();
-                        default:
-                            return false;
-                    }
-                    break;
-                case storage_type::int64_val:
-                    switch (rhs.type())
-                    {
-                        case storage_type::int64_val:
-                            return int64_data_cast()->value() == rhs.int64_data_cast()->value();
-                        case storage_type::uint64_val:
-                            return int64_data_cast()->value() >= 0 ? static_cast<uint64_t>(int64_data_cast()->value()) == rhs.uint64_data_cast()->value() : false;
-                        case storage_type::double_val:
-                            return static_cast<double>(int64_data_cast()->value()) == rhs.double_data_cast()->value();
-                        default:
-                            return false;
-                    }
-                    break;
-                case storage_type::uint64_val:
-                    switch (rhs.type())
-                    {
-                        case storage_type::int64_val:
-                            return rhs.int64_data_cast()->value() >= 0 ? uint64_data_cast()->value() == static_cast<uint64_t>(rhs.int64_data_cast()->value()) : false;
-                        case storage_type::uint64_val:
-                            return uint64_data_cast()->value() == rhs.uint64_data_cast()->value();
-                        case storage_type::double_val:
-                            return static_cast<double>(uint64_data_cast()->value()) == rhs.double_data_cast()->value();
-                        default:
-                            return false;
-                    }
-                    break;
-                case storage_type::double_val:
-                    switch (rhs.type())
-                    {
-                        case storage_type::int64_val:
-                            return double_data_cast()->value() == static_cast<double>(rhs.int64_data_cast()->value());
-                        case storage_type::uint64_val:
-                            return double_data_cast()->value() == static_cast<double>(rhs.uint64_data_cast()->value());
-                        case storage_type::double_val:
-                            return double_data_cast()->value() == rhs.double_data_cast()->value();
-                        default:
-                            return false;
-                    }
-                    break;
-                case storage_type::short_string_val:
-                    switch (rhs.type())
-                    {
-                        case storage_type::short_string_val:
-                            return as_string_view() == rhs.as_string_view();
-                        case storage_type::long_string_val:
-                            return as_string_view() == rhs.as_string_view();
-                        default:
-                            return false;
-                    }
-                    break;
-                case storage_type::long_string_val:
-                    switch (rhs.type())
-                    {
-                        case storage_type::short_string_val:
-                            return as_string_view() == rhs.as_string_view();
-                        case storage_type::long_string_val:
-                            return as_string_view() == rhs.as_string_view();
-                        default:
-                            return false;
-                    }
-                    break;
-                case storage_type::byte_string_val:
-                    switch (rhs.type())
-                    {
-                        case storage_type::byte_string_val:
-                        {
-                            return as_byte_string_view() == rhs.as_byte_string_view();
-                        }
-                        default:
-                            return false;
-                    }
-                    break;
-                case storage_type::array_val:
-                    switch (rhs.type())
-                    {
-                        case storage_type::array_val:
-                            return array_data_cast()->value() == rhs.array_data_cast()->value();
-                        default:
-                            return false;
-                    }
-                    break;
-                case storage_type::object_val:
-                    switch (rhs.type())
-                    {
-                        case storage_type::empty_object_val:
-                            return size() == 0;
-                        case storage_type::object_val:
-                            return object_data_cast()->value() == rhs.object_data_cast()->value();
-                        default:
-                            return false;
-                    }
-                    break;
-                default:
-                    JSONCONS_UNREACHABLE();
-                    break;
-            }
+            std::swap(val.ptr_,ptr_);
         }
 
-        bool operator!=(const variant& rhs) const
+        object& value()
         {
-            return !(*this == rhs);
+            return *ptr_;
         }
 
-        bool operator<(const variant& rhs) const
+        const object& value() const
         {
-            if (this == &rhs)
-            {
-                return false;
-            }
-            switch (type())
-            {
-                case storage_type::null_val:
-                    return (int)type() < (int)rhs.type();
-                case storage_type::empty_object_val:
-                    switch (rhs.type())
-                    {
-                        case storage_type::empty_object_val:
-                            return false;
-                        case storage_type::object_val:
-                            return rhs.size() != 0;
-                        default:
-                            return (int)type() < (int)rhs.type();
-                    }
-                    break;
-                case storage_type::bool_val:
-                    switch (rhs.type())
-                    {
-                        case storage_type::bool_val:
-                            return bool_data_cast()->value() < rhs.bool_data_cast()->value();
-                        default:
-                            return (int)type() < (int)rhs.type();
-                    }
-                    break;
-                case storage_type::int64_val:
-                    switch (rhs.type())
-                    {
-                        case storage_type::int64_val:
-                            return int64_data_cast()->value() < rhs.int64_data_cast()->value();
-                        case storage_type::uint64_val:
-                            return int64_data_cast()->value() >= 0 ? static_cast<uint64_t>(int64_data_cast()->value()) < rhs.uint64_data_cast()->value() : true;
-                        case storage_type::double_val:
-                            return static_cast<double>(int64_data_cast()->value()) < rhs.double_data_cast()->value();
-                        default:
-                            return (int)type() < (int)rhs.type();
-                    }
-                    break;
-                case storage_type::uint64_val:
-                    switch (rhs.type())
-                    {
-                        case storage_type::int64_val:
-                            return rhs.int64_data_cast()->value() >= 0 ? uint64_data_cast()->value() < static_cast<uint64_t>(rhs.int64_data_cast()->value()) : true;
-                        case storage_type::uint64_val:
-                            return uint64_data_cast()->value() < rhs.uint64_data_cast()->value();
-                        case storage_type::double_val:
-                            return static_cast<double>(uint64_data_cast()->value()) < rhs.double_data_cast()->value();
-                        default:
-                            return (int)type() < (int)rhs.type();
-                    }
-                    break;
-                case storage_type::double_val:
-                    switch (rhs.type())
-                    {
-                        case storage_type::int64_val:
-                            return double_data_cast()->value() < static_cast<double>(rhs.int64_data_cast()->value());
-                        case storage_type::uint64_val:
-                            return double_data_cast()->value() < static_cast<double>(rhs.uint64_data_cast()->value());
-                        case storage_type::double_val:
-                            return double_data_cast()->value() < rhs.double_data_cast()->value();
-                        default:
-                            return (int)type() < (int)rhs.type();
-                    }
-                    break;
-                case storage_type::short_string_val:
-                    switch (rhs.type())
-                    {
-                        case storage_type::short_string_val:
-                            return as_string_view() < rhs.as_string_view();
-                        case storage_type::long_string_val:
-                            return as_string_view() < rhs.as_string_view();
-                        default:
-                            return (int)type() < (int)rhs.type();
-                    }
-                    break;
-                case storage_type::long_string_val:
-                    switch (rhs.type())
-                    {
-                        case storage_type::short_string_val:
-                            return as_string_view() < rhs.as_string_view();
-                        case storage_type::long_string_val:
-                            return as_string_view() < rhs.as_string_view();
-                        default:
-                            return (int)type() < (int)rhs.type();
-                    }
-                    break;
-                case storage_type::byte_string_val:
-                    switch (rhs.type())
-                    {
-                        case storage_type::byte_string_val:
-                        {
-                            return as_byte_string_view() < rhs.as_byte_string_view();
-                        }
-                        default:
-                            return (int)type() < (int)rhs.type();
-                    }
-                    break;
-                case storage_type::array_val:
-                    switch (rhs.type())
-                    {
-                        case storage_type::array_val:
-                            return array_data_cast()->value() < rhs.array_data_cast()->value();
-                        default:
-                            return (int)type() < (int)rhs.type();
-                    }
-                    break;
-                case storage_type::object_val:
-                    switch (rhs.type())
-                    {
-                        case storage_type::empty_object_val:
-                            return false;
-                        case storage_type::object_val:
-                            return object_data_cast()->value() < rhs.object_data_cast()->value();
-                        default:
-                            return (int)type() < (int)rhs.type();
-                    }
-                    break;
-                default:
-                    JSONCONS_UNREACHABLE();
-                    break;
-            }
+            return *ptr_;
         }
 
-        template <class Alloc = allocator_type>
-        typename std::enable_if<std::is_pod<typename std::allocator_traits<Alloc>::pointer>::value,void>::type
-        swap(variant& other) noexcept
+        allocator_type get_allocator() const
         {
-            if (this ==&other)
-            {
-                return;
-            }
-
-            std::swap(data_,other.data_);
-        }
-
-        template <class Alloc = allocator_type>
-        typename std::enable_if<!std::is_pod<typename std::allocator_traits<Alloc>::pointer>::value, void>::type
-        swap(variant& other) noexcept
-        {
-            if (this ==&other)
-            {
-                return;
-            }
-
-            variant temp(other);
-            switch (type())
-            {
-                case storage_type::null_val:
-                    new(reinterpret_cast<void*>(&(other.data_)))null_data(*null_data_cast());
-                    break;
-                case storage_type::empty_object_val:
-                    new(reinterpret_cast<void*>(&(other.data_)))empty_object_data(*empty_object_data_cast());
-                    break;
-                case storage_type::bool_val:
-                    new(reinterpret_cast<void*>(&(other.data_)))bool_data(*bool_data_cast());
-                    break;
-                case storage_type::int64_val:
-                    new(reinterpret_cast<void*>(&(other.data_)))int64_data(*int64_data_cast());
-                    break;
-                case storage_type::uint64_val:
-                    new(reinterpret_cast<void*>(&(other.data_)))uint64_data(*uint64_data_cast());
-                    break;
-                case storage_type::double_val:
-                    new(reinterpret_cast<void*>(&(other.data_)))double_data(*double_data_cast());
-                    break;
-                case storage_type::short_string_val:
-                    new(reinterpret_cast<void*>(&(other.data_)))short_string_data(*short_string_data_cast());
-                    break;
-                case storage_type::long_string_val:
-                    new(reinterpret_cast<void*>(&other.data_))long_string_data(std::move(*string_data_cast()));
-                    break;
-                case storage_type::byte_string_val:
-                    new(reinterpret_cast<void*>(&other.data_))byte_string_data(std::move(*byte_string_data_cast()));
-                    break;
-                case storage_type::array_val:
-                    new(reinterpret_cast<void*>(&(other.data_)))array_data(std::move(*array_data_cast()));
-                    break;
-                case storage_type::object_val:
-                    new(reinterpret_cast<void*>(&(other.data_)))object_data(std::move(*object_data_cast()));
-                    break;
-                default:
-                    JSONCONS_UNREACHABLE();
-                    break;
-            }
-            switch (temp.type())
-            {
-                case storage_type::long_string_val:
-                    new(reinterpret_cast<void*>(&data_))long_string_data(std::move(*temp.string_data_cast()));
-                    break;
-                case storage_type::byte_string_val:
-                    new(reinterpret_cast<void*>(&data_))byte_string_data(std::move(*temp.byte_string_data_cast()));
-                    break;
-                case storage_type::array_val:
-                    new(reinterpret_cast<void*>(&(data_)))array_data(std::move(*temp.array_data_cast()));
-                    break;
-                case storage_type::object_val:
-                    new(reinterpret_cast<void*>(&(data_)))object_data(std::move(*temp.object_data_cast()));
-                    break;
-                default:
-                    std::swap(data_,temp.data_);
-                    break;
-            }
+            return ptr_->get_allocator();
         }
     private:
 
-        void Init_(const variant& val)
+        void destroy() noexcept
         {
-            switch (val.type())
-            {
-            case storage_type::null_val:
-                new(reinterpret_cast<void*>(&data_))null_data(*(val.null_data_cast()));
-                break;
-            case storage_type::empty_object_val:
-                new(reinterpret_cast<void*>(&data_))empty_object_data(*(val.empty_object_data_cast()));
-                break;
-            case storage_type::bool_val:
-                new(reinterpret_cast<void*>(&data_))bool_data(*(val.bool_data_cast()));
-                break;
-            case storage_type::int64_val:
-                new(reinterpret_cast<void*>(&data_))int64_data(*(val.int64_data_cast()));
-                break;
-            case storage_type::uint64_val:
-                new(reinterpret_cast<void*>(&data_))uint64_data(*(val.uint64_data_cast()));
-                break;
-            case storage_type::double_val:
-                new(reinterpret_cast<void*>(&data_))double_data(*(val.double_data_cast()));
-                break;
-            case storage_type::short_string_val:
-                new(reinterpret_cast<void*>(&data_))short_string_data(*(val.short_string_data_cast()));
-                break;
-            case storage_type::long_string_val:
-                new(reinterpret_cast<void*>(&data_))long_string_data(*(val.string_data_cast()));
-                break;
-            case storage_type::byte_string_val:
-                new(reinterpret_cast<void*>(&data_))byte_string_data(*(val.byte_string_data_cast()));
-                break;
-            case storage_type::object_val:
-                new(reinterpret_cast<void*>(&data_))object_data(*(val.object_data_cast()));
-                break;
-            case storage_type::array_val:
-                new(reinterpret_cast<void*>(&data_))array_data(*(val.array_data_cast()));
-                break;
-            default:
-                break;
-            }
-        }
-
-        void Init_(const variant& val, const Allocator& a)
-        {
-            switch (val.type())
-            {
-            case storage_type::null_val:
-            case storage_type::empty_object_val:
-            case storage_type::bool_val:
-            case storage_type::int64_val:
-            case storage_type::uint64_val:
-            case storage_type::double_val:
-            case storage_type::short_string_val:
-                Init_(val);
-                break;
-            case storage_type::long_string_val:
-                new(reinterpret_cast<void*>(&data_))long_string_data(*(val.string_data_cast()),a);
-                break;
-            case storage_type::byte_string_val:
-                new(reinterpret_cast<void*>(&data_))byte_string_data(*(val.byte_string_data_cast()),a);
-                break;
-            case storage_type::array_val:
-                new(reinterpret_cast<void*>(&data_))array_data(*(val.array_data_cast()),a);
-                break;
-            case storage_type::object_val:
-                new(reinterpret_cast<void*>(&data_))object_data(*(val.object_data_cast()),a);
-                break;
-            default:
-                break;
-            }
-        }
-
-        void Init_rv_(variant&& val) noexcept
-        {
-            switch (val.type())
-            {
-            case storage_type::null_val:
-            case storage_type::empty_object_val:
-            case storage_type::double_val:
-            case storage_type::int64_val:
-            case storage_type::uint64_val:
-            case storage_type::bool_val:
-            case storage_type::short_string_val:
-                Init_(val);
-                break;
-            case storage_type::long_string_val:
-                {
-                    new(reinterpret_cast<void*>(&data_))long_string_data(std::move(*val.string_data_cast()));
-                    new(reinterpret_cast<void*>(&val.data_))null_data();
-                }
-                break;
-            case storage_type::byte_string_val:
-                {
-                    new(reinterpret_cast<void*>(&data_))byte_string_data(std::move(*val.byte_string_data_cast()));
-                    new(reinterpret_cast<void*>(&val.data_))null_data();
-                }
-                break;
-            case storage_type::array_val:
-                {
-                    new(reinterpret_cast<void*>(&data_))array_data(std::move(*val.array_data_cast()));
-                    new(reinterpret_cast<void*>(&val.data_))null_data();
-                }
-                break;
-            case storage_type::object_val:
-                {
-                    new(reinterpret_cast<void*>(&data_))object_data(std::move(*val.object_data_cast()));
-                    new(reinterpret_cast<void*>(&val.data_))null_data();
-                }
-                break;
-            default:
-                JSONCONS_UNREACHABLE();
-                break;
-            }
-        }
-
-        void Init_rv_(variant&& val, const Allocator&, std::true_type) noexcept
-        {
-            Init_rv_(std::forward<variant>(val));
-        }
-
-        void Init_rv_(variant&& val, const Allocator& a, std::false_type) noexcept
-        {
-            switch (val.type())
-            {
-            case storage_type::null_val:
-            case storage_type::empty_object_val:
-            case storage_type::double_val:
-            case storage_type::int64_val:
-            case storage_type::uint64_val:
-            case storage_type::bool_val:
-            case storage_type::short_string_val:
-                Init_(std::forward<variant>(val));
-                break;
-            case storage_type::long_string_val:
-                {
-                    if (a == val.string_data_cast()->get_allocator())
-                    {
-                        Init_rv_(std::forward<variant>(val), a, std::true_type());
-                    }
-                    else
-                    {
-                        Init_(val,a);
-                    }
-                }
-                break;
-            case storage_type::byte_string_val:
-                {
-                    if (a == val.byte_string_data_cast()->get_allocator())
-                    {
-                        Init_rv_(std::forward<variant>(val), a, std::true_type());
-                    }
-                    else
-                    {
-                        Init_(val,a);
-                    }
-                }
-                break;
-            case storage_type::object_val:
-                {
-                    if (a == val.object_data_cast()->get_allocator())
-                    {
-                        Init_rv_(std::forward<variant>(val), a, std::true_type());
-                    }
-                    else
-                    {
-                        Init_(val,a);
-                    }
-                }
-                break;
-            case storage_type::array_val:
-                {
-                    if (a == val.array_data_cast()->get_allocator())
-                    {
-                        Init_rv_(std::forward<variant>(val), a, std::true_type());
-                    }
-                    else
-                    {
-                        Init_(val,a);
-                    }
-                }
-                break;
-            default:
-                break;
-            }
+            object_allocator alloc(ptr_->get_allocator());
+            std::allocator_traits<object_allocator>::destroy(alloc, jsoncons::detail::to_plain_pointer(ptr_));
+            std::allocator_traits<object_allocator>::deallocate(alloc, ptr_,1);
         }
     };
 
@@ -1638,17 +909,21 @@ public:
             auto it = val.find(key_);
             if (it == val.object_range().end())
             {
-                it = val.insert_or_assign(val.object_range().begin(),key_,object(val.object_value().get_allocator()));            
+                auto r = val.try_emplace(key_, json_object_arg, semantic_tag::none, val.object_value().get_allocator());
+                return r.first->value();
             }
-            return it->value();
+            else
+            {
+                return it->value();
+            }
         }
 
-        basic_json& evaluate(size_t index)
+        basic_json& evaluate(std::size_t index)
         {
             return evaluate().at(index);
         }
 
-        const basic_json& evaluate(size_t index) const
+        const basic_json& evaluate(std::size_t index) const
         {
             return evaluate().at(index);
         }
@@ -1663,44 +938,51 @@ public:
             return evaluate().at(index);
         }
     public:
+        using jsoncons_json_parent_type = ParentT;
+        using proxy_type = proxy<typename ParentT::proxy_type>;
 
-        typedef proxy<typename ParentT::proxy_type> proxy_type;
+        operator basic_json&()
+        {
+            return evaluate();
+        }
 
-        range<object_iterator> object_range()
+        operator const basic_json&() const
+        {
+            return evaluate();
+        }
+
+        range<object_iterator, const_object_iterator> object_range()
         {
             return evaluate().object_range();
         }
 
-        range<const_object_iterator> object_range() const
+        range<const_object_iterator, const_object_iterator> object_range() const
         {
             return evaluate().object_range();
         }
 
-        range<array_iterator> array_range()
+        range<array_iterator, const_array_iterator> array_range()
         {
             return evaluate().array_range();
         }
 
-        range<const_array_iterator> array_range() const
+        range<const_array_iterator, const_array_iterator> array_range() const
         {
             return evaluate().array_range();
         }
 
-        size_t size() const noexcept
+        std::size_t size() const noexcept
         {
-            try
-            {
-                return evaluate().size();
-            }
-            catch (...)
+            if (!parent_.contains(key_))
             {
                 return 0;
             }
+            return evaluate().size();
         }
 
-        storage_type type() const
+        storage_kind storage() const
         {
-            return evaluate().type();
+            return evaluate().storage();
         }
 
         semantic_tag tag() const
@@ -1708,7 +990,12 @@ public:
             return evaluate().tag();
         }
 
-        size_t count(const string_view_type& name) const
+        json_type type() const
+        {
+            return evaluate().type();
+        }
+
+        std::size_t count(const string_view_type& name) const
         {
             return evaluate().count(name);
         }
@@ -1718,52 +1005,56 @@ public:
             return evaluate().get_allocator();
         }
 
-        bool contains(const string_view_type& key) const 
+        uint64_t ext_tag() const
         {
+            return evaluate().ext_tag();
+        }
+
+        bool contains(const string_view_type& key) const noexcept
+        {
+            if (!parent_.contains(key_))
+            {
+                return false;
+            }
+
             return evaluate().contains(key);
         }
 
         bool is_null() const noexcept
         {
-            try
-            {
-                return evaluate().is_null();
-            }
-            catch (...)
+            if (!parent_.contains(key_))
             {
                 return false;
             }
+            return evaluate().is_null();
         }
 
         bool empty() const noexcept
         {
-            try
-            {
-                return evaluate().empty();
-            }
-            catch (...)
+            if (!parent_.contains(key_))
             {
                 return true;
             }
+            return evaluate().empty();
         }
 
-        size_t capacity() const
+        std::size_t capacity() const
         {
             return evaluate().capacity();
         }
 
-        void reserve(size_t n)
+        void reserve(std::size_t n)
         {
             evaluate().reserve(n);
         }
 
-        void resize(size_t n)
+        void resize(std::size_t n)
         {
             evaluate().resize(n);
         }
 
         template <class T>
-        void resize(size_t n, T val)
+        void resize(std::size_t n, T val)
         {
             evaluate().resize(n,val);
         }
@@ -1771,157 +1062,127 @@ public:
         template<class T, class... Args>
         bool is(Args&&... args) const noexcept
         {
-            try
-            {
-                return evaluate().template is<T>(std::forward<Args>(args)...);
-            }
-            catch (...)
+            if (!parent_.contains(key_))
             {
                 return false;
             }
+            return evaluate().template is<T>(std::forward<Args>(args)...);
         }
 
         bool is_string() const noexcept
         {
-            try
-            {
-                return evaluate().is_string();
-            }
-            catch (...)
+            if (!parent_.contains(key_))
             {
                 return false;
             }
+            return evaluate().is_string();
         }
 
         bool is_string_view() const noexcept
         {
-            try
-            {
-                return evaluate().is_string_view();
-            }
-            catch (...)
+            if (!parent_.contains(key_))
             {
                 return false;
             }
+            return evaluate().is_string_view();
         }
 
         bool is_byte_string() const noexcept
         {
-            try
-            {
-                return evaluate().is_byte_string();
-            }
-            catch (...)
+            if (!parent_.contains(key_))
             {
                 return false;
             }
+            return evaluate().is_byte_string();
         }
 
         bool is_byte_string_view() const noexcept
         {
-            try
-            {
-                return evaluate().is_byte_string_view();
-            }
-            catch (...)
+            if (!parent_.contains(key_))
             {
                 return false;
             }
+            return evaluate().is_byte_string_view();
         }
 
         bool is_bignum() const noexcept
         {
-            try
-            {
-                return evaluate().is_bignum();
-            }
-            catch (...)
+            if (!parent_.contains(key_))
             {
                 return false;
             }
+            return evaluate().is_bignum();
         }
 
         bool is_number() const noexcept
         {
-            try
-            {
-                return evaluate().is_number();
-            }
-            catch (...)
+            if (!parent_.contains(key_))
             {
                 return false;
             }
+            return evaluate().is_number();
         }
         bool is_bool() const noexcept
         {
-            try
-            {
-                return evaluate().is_bool();
-            }
-            catch (...)
+            if (!parent_.contains(key_))
             {
                 return false;
             }
+            return evaluate().is_bool();
         }
 
         bool is_object() const noexcept
         {
-            try
-            {
-                return evaluate().is_object();
-            }
-            catch (...)
+            if (!parent_.contains(key_))
             {
                 return false;
             }
+            return evaluate().is_object();
         }
 
         bool is_array() const noexcept
         {
-            try
-            {
-                return evaluate().is_array();
-            }
-            catch (...)
+            if (!parent_.contains(key_))
             {
                 return false;
             }
+            return evaluate().is_array();
         }
 
         bool is_int64() const noexcept
         {
-            try
-            {
-                return evaluate().is_int64();
-            }
-            catch (...)
+            if (!parent_.contains(key_))
             {
                 return false;
             }
+            return evaluate().is_int64();
         }
 
         bool is_uint64() const noexcept
         {
-            try
-            {
-                return evaluate().is_uint64();
-            }
-            catch (...)
+            if (!parent_.contains(key_))
             {
                 return false;
             }
+            return evaluate().is_uint64();
+        }
+
+        bool is_half() const noexcept
+        {
+            if (!parent_.contains(key_))
+            {
+                return false;
+            }
+            return evaluate().is_half();
         }
 
         bool is_double() const noexcept
         {
-            try
-            {
-                return evaluate().is_double();
-            }
-            catch (...)
+            if (!parent_.contains(key_))
             {
                 return false;
             }
+            return evaluate().is_double();
         }
 
         string_view_type as_string_view() const 
@@ -1934,11 +1195,6 @@ public:
             return evaluate().as_byte_string_view();
         }
 
-        basic_bignum<byte_allocator_type> as_bignum() const 
-        {
-            return evaluate().as_bignum();
-        }
-
         template <class SAllocator=std::allocator<char_type>>
         std::basic_string<char_type,char_traits_type,SAllocator> as_string() const 
         {
@@ -1946,9 +1202,9 @@ public:
         }
 
         template <class SAllocator=std::allocator<char_type>>
-        std::basic_string<char_type,char_traits_type,SAllocator> as_string(const SAllocator& allocator) const 
+        std::basic_string<char_type,char_traits_type,SAllocator> as_string(const SAllocator& alloc) const 
         {
-            return evaluate().as_string(allocator);
+            return evaluate().as_string(alloc);
         }
 
         template <typename BAllocator=std::allocator<uint8_t>>
@@ -1957,24 +1213,20 @@ public:
             return evaluate().template as_byte_string<BAllocator>();
         }
 
-        template <class SAllocator=std::allocator<char_type>>
-        std::basic_string<char_type,char_traits_type,SAllocator> as_string(const basic_json_options<char_type>& options) const
+        template<class T>
+        typename std::enable_if<is_json_type_traits_specialized<basic_json,T>::value,T>::type
+        as() const
         {
-            return evaluate().as_string(options);
+            return evaluate().template as<T>();
         }
 
-        template <class SAllocator=std::allocator<char_type>>
-        std::basic_string<char_type,char_traits_type,SAllocator> as_string(const basic_json_options<char_type>& options,
-                              const SAllocator& allocator) const
+        template<class T>
+        typename std::enable_if<std::is_convertible<uint8_t,typename T::value_type>::value,T>::type
+        as(byte_string_arg_t, semantic_tag hint) const
         {
-            return evaluate().as_string(options,allocator);
+            return evaluate().template as<T>(byte_string_arg, hint);
         }
 
-        template<class T, class... Args>
-        T as(Args&&... args) const
-        {
-            return evaluate().template as<T>(std::forward<Args>(args)...);
-        }
         bool as_bool() const
         {
             return evaluate().as_bool();
@@ -2002,42 +1254,42 @@ public:
             return *this;
         }
 
-        bool operator==(const basic_json& rhs) const
+        bool operator==(const basic_json& rhs) const noexcept
         {
             return evaluate() == rhs;
         }
 
-        bool operator!=(const basic_json& rhs) const
+        bool operator!=(const basic_json& rhs) const noexcept
         {
             return evaluate() != rhs;
         }
 
-        bool operator<(const basic_json& rhs) const
+        bool operator<(const basic_json& rhs) const noexcept
         {
             return evaluate() < rhs;
         }
 
-        bool operator<=(const basic_json& rhs) const
+        bool operator<=(const basic_json& rhs) const noexcept
         {
             return !(rhs < evaluate());
         }
 
-        bool operator>(const basic_json& rhs) const
+        bool operator>(const basic_json& rhs) const noexcept
         {
             return !(evaluate() <= rhs);
         }
 
-        bool operator>=(const basic_json& rhs) const
+        bool operator>=(const basic_json& rhs) const noexcept
         {
             return !(evaluate() < rhs);
         }
 
-        basic_json& operator[](size_t i)
+        basic_json& operator[](std::size_t i)
         {
             return evaluate_with_default().at(i);
         }
 
-        const basic_json& operator[](size_t i) const
+        const basic_json& operator[](std::size_t i) const
         {
             return evaluate().at(i);
         }
@@ -2062,12 +1314,17 @@ public:
             return evaluate().at(name);
         }
 
-        const basic_json& at(size_t index)
+        const basic_json& at_or_null(const string_view_type& name) const
+        {
+            return evaluate().at_or_null(name);
+        }
+
+        const basic_json& at(std::size_t index)
         {
             return evaluate().at(index);
         }
 
-        const basic_json& at(size_t index) const
+        const basic_json& at(std::size_t index) const
         {
             return evaluate().at(index);
         }
@@ -2082,21 +1339,14 @@ public:
             return evaluate().find(name);
         }
 
-        const basic_json& get_with_default(const string_view_type& name) const
+        template <class T,class U>
+        T get_value_or(const string_view_type& name, U&& default_value) const
         {
-            return evaluate().get_with_default(name);
-        }
-
-        template <class T>
-        T get_with_default(const string_view_type& name, const T& default_val) const
-        {
-            return evaluate().template get_with_default<T>(name,default_val);
-        }
-
-        template <class T = std::basic_string<char_type>>
-        T get_with_default(const string_view_type& name, const char_type* default_val) const
-        {
-            return evaluate().template get_with_default<T>(name,default_val);
+            static_assert(std::is_copy_constructible<T>::value,
+                          "get_value_or: T must be copy constructible");
+            static_assert(std::is_convertible<U&&, T>::value,
+                          "get_value_or: U must be convertible to T");
+            return evaluate().template get_value_or<T,U>(name,std::forward<U>(default_value));
         }
 
         void shrink_to_fit()
@@ -2252,58 +1502,77 @@ public:
         }
 
         template <class SAllocator=std::allocator<char_type>>
-        void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s) const
-        {
-            evaluate().dump(s);
-        }
-
-        template <class SAllocator=std::allocator<char_type>>
-        void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s,
-                  indenting line_indent) const
+        void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s, 
+                  indenting line_indent = indenting::no_indent) const
         {
             evaluate().dump(s, line_indent);
         }
 
-        template <class SAllocator=std::allocator<char_type>>
-        void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s,
-                  const basic_json_options<char_type>& options) const
-        {
-            evaluate().dump(s,options);
-        }
-
-        template <class SAllocator=std::allocator<char_type>>
-        void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s,
-                  const basic_json_options<char_type>& options,
-                  indenting line_indent) const
-        {
-            evaluate().dump(s,options,line_indent);
-        }
-
-        void dump(basic_json_content_handler<char_type>& handler) const
-        {
-            evaluate().dump(handler);
-        }
-
-        void dump(std::basic_ostream<char_type>& os) const
-        {
-            evaluate().dump(os);
-        }
-
-        void dump(std::basic_ostream<char_type>& os, indenting line_indent) const
+        void dump(std::basic_ostream<char_type>& os, 
+                  indenting line_indent = indenting::no_indent) const
         {
             evaluate().dump(os, line_indent);
         }
 
-        void dump(std::basic_ostream<char_type>& os, const basic_json_options<char_type>& options) const
+        template <class SAllocator=std::allocator<char_type>>
+        void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s,
+                  const basic_json_encode_options<char_type>& options, 
+                  indenting line_indent = indenting::no_indent) const
         {
-            evaluate().dump(os,options);
+            evaluate().dump(s, options, line_indent);
         }
 
-        void dump(std::basic_ostream<char_type>& os, const basic_json_options<char_type>& options, indenting line_indent) const
+        void dump(std::basic_ostream<char_type>& os, 
+                  const basic_json_encode_options<char_type>& options, 
+                  indenting line_indent = indenting::no_indent) const
         {
-            evaluate().dump(os,options,line_indent);
+            evaluate().dump(os, options, line_indent);
         }
-        void swap(basic_json& val)
+
+        void dump(basic_json_visitor<char_type>& visitor) const
+        {
+            evaluate().dump(visitor);
+        }
+
+        template <class SAllocator=std::allocator<char_type>>
+        void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s, 
+                  indenting line_indent,
+                  std::error_code& ec) const
+        {
+            evaluate().dump(s, line_indent, ec);
+        }
+
+        template <class SAllocator=std::allocator<char_type>>
+        void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s,
+                  const basic_json_encode_options<char_type>& options, 
+                  indenting line_indent,
+                  std::error_code& ec) const
+        {
+            evaluate().dump(s, options, line_indent, ec);
+        }
+
+        void dump(std::basic_ostream<char_type>& os, 
+                  const basic_json_encode_options<char_type>& options, 
+                  indenting line_indent,
+                  std::error_code& ec) const
+        {
+            evaluate().dump(os, options, line_indent, ec);
+        }
+
+        void dump(std::basic_ostream<char_type>& os, 
+                  indenting line_indent,
+                  std::error_code& ec) const
+        {
+            evaluate().dump(os, line_indent, ec);
+        }
+
+        void dump(basic_json_visitor<char_type>& visitor,
+                  std::error_code& ec) const
+        {
+            evaluate().dump(visitor, ec);
+        }
+
+        void swap(basic_json& val) 
         {
             evaluate_with_default().swap(val);
         }
@@ -2313,7 +1582,30 @@ public:
             o.dump(os);
             return os;
         }
+
+        template <class T>
+        T get_with_default(const string_view_type& name, const T& default_value) const
+        {
+            return evaluate().template get_with_default<T>(name,default_value);
+        }
+
+        template <class T = std::basic_string<char_type>>
+        T get_with_default(const string_view_type& name, const char_type* default_value) const
+        {
+            return evaluate().template get_with_default<T>(name,default_value);
+        }
+
+        std::basic_string<char_type> to_string() const 
+        {
+            return evaluate().to_string();
+        }
+
 #if !defined(JSONCONS_NO_DEPRECATED)
+
+        const basic_json& get_with_default(const string_view_type& name) const
+        {
+            return evaluate().at_or_null(name);
+        }
 
         JSONCONS_DEPRECATED_MSG("Instead, use tag()")
         semantic_tag get_semantic_tag() const
@@ -2324,27 +1616,21 @@ public:
         JSONCONS_DEPRECATED_MSG("Instead, use tag() == semantic_tag::datetime")
         bool is_datetime() const noexcept
         {
-            try
-            {
-                return evaluate().is_datetime();
-            }
-            catch (...)
+            if (!parent_.contains(key_))
             {
                 return false;
             }
+            return evaluate().is_datetime();
         }
 
-        JSONCONS_DEPRECATED_MSG("Instead, use tag() == semantic_tag::timestamp")
+        JSONCONS_DEPRECATED_MSG("Instead, use tag() == semantic_tag::epoch_time")
         bool is_epoch_time() const noexcept
         {
-            try
-            {
-                return evaluate().is_epoch_time();
-            }
-            catch (...)
+            if (!parent_.contains(key_))
             {
                 return false;
             }
+            return evaluate().is_epoch_time();
         }
 
         template <class T>
@@ -2376,61 +1662,49 @@ public:
         }
 
         JSONCONS_DEPRECATED_MSG("Instead, use contains(const string_view_type&)")
-        bool has_key(const string_view_type& name) const
+        bool has_key(const string_view_type& name) const noexcept
         {
-            return evaluate().contains(name);
+            return contains(name);
         }
 
         JSONCONS_DEPRECATED_MSG("Instead, use is<int64_t>()")
         bool is_integer() const noexcept
         {
-            try
-            {
-                return evaluate().is_int64();
-            }
-            catch (...)
+            if (!parent_.contains(key_))
             {
                 return false;
             }
+            return evaluate().is_int64();
         }
 
         JSONCONS_DEPRECATED_MSG("Instead, use is<uint64_t>()")
         bool is_uinteger() const noexcept
         {
-            try
-            {
-                return evaluate().is_uint64();
-            }
-            catch (...)
+            if (!parent_.contains(key_))
             {
                 return false;
             }
+            return evaluate().is_uint64();
         }
 
         JSONCONS_DEPRECATED_MSG("Instead, use is<unsigned long long>()")
         bool is_ulonglong() const noexcept
         {
-            try
-            {
-                return evaluate().is_ulonglong();
-            }
-            catch (...)
+            if (!parent_.contains(key_))
             {
                 return false;
             }
+            return evaluate().is_ulonglong();
         }
 
         JSONCONS_DEPRECATED_MSG("Instead, use is<long long>()")
         bool is_longlong() const noexcept
         {
-            try
-            {
-                return evaluate().is_longlong();
-            }
-            catch (...)
+            if (!parent_.contains(key_))
             {
                 return false;
             }
+            return evaluate().is_longlong();
         }
 
         JSONCONS_DEPRECATED_MSG("Instead, use as<int>()")
@@ -2475,8 +1749,8 @@ public:
             return evaluate().as_uinteger();
         }
 
-        JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, const basic_json_options<char_type>&, indenting)")
-        void dump(std::basic_ostream<char_type>& os, const basic_json_options<char_type>& options, bool pprint) const
+        JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, const basic_json_encode_options<char_type>&, indenting)")
+        void dump(std::basic_ostream<char_type>& os, const basic_json_encode_options<char_type>& options, bool pprint) const
         {
             evaluate().dump(os,options,pprint);
         }
@@ -2486,17 +1760,10 @@ public:
         {
             evaluate().dump(os, pprint);
         }
-
-        template <class SAllocator=std::allocator<char_type>>
-        JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_string<char_type,char_traits_type,SAllocator>&)")
-        std::basic_string<char_type,char_traits_type,SAllocator> to_string(const SAllocator& allocator = SAllocator()) const 
+        JSONCONS_DEPRECATED_MSG("Instead, use dump(basic_json_visitor<char_type>&)")
+        void write(basic_json_visitor<char_type>& visitor) const
         {
-            return evaluate().to_string(allocator);
-        }
-        JSONCONS_DEPRECATED_MSG("Instead, use dump(basic_json_content_handler<char_type>&)")
-        void write(basic_json_content_handler<char_type>& handler) const
-        {
-            evaluate().write(handler);
+            evaluate().write(visitor);
         }
 
         JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&)")
@@ -2505,28 +1772,28 @@ public:
             evaluate().write(os);
         }
 
-        JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, const basic_json_options<char_type>&)")
-        void write(std::basic_ostream<char_type>& os, const basic_json_options<char_type>& options) const
+        JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, const basic_json_encode_options<char_type>&)")
+        void write(std::basic_ostream<char_type>& os, const basic_json_encode_options<char_type>& options) const
         {
             evaluate().write(os,options);
         }
 
-        JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, const basic_json_options<char_type>&, indenting)")
-        void write(std::basic_ostream<char_type>& os, const basic_json_options<char_type>& options, bool pprint) const
+        JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, const basic_json_encode_options<char_type>&, indenting)")
+        void write(std::basic_ostream<char_type>& os, const basic_json_encode_options<char_type>& options, bool pprint) const
         {
             evaluate().write(os,options,pprint);
         }
 
         template <class SAllocator=std::allocator<char_type>>
-        JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, const basic_json_options<char_type>&)")
-        std::basic_string<char_type,char_traits_type,SAllocator> to_string(const basic_json_options<char_type>& options, char_allocator_type& allocator = char_allocator_type()) const
+        JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, const basic_json_encode_options<char_type>&)")
+        std::basic_string<char_type,char_traits_type,SAllocator> to_string(const basic_json_encode_options<char_type>& options, char_allocator_type& alloc = char_allocator_type()) const
         {
-            return evaluate().to_string(options,allocator);
+            return evaluate().to_string(options,alloc);
         }
-        JSONCONS_DEPRECATED_MSG("Instead, use dump(basic_json_content_handler<char_type>&)")
-        void to_stream(basic_json_content_handler<char_type>& handler) const
+        JSONCONS_DEPRECATED_MSG("Instead, use dump(basic_json_visitor<char_type>&)")
+        void to_stream(basic_json_visitor<char_type>& visitor) const
         {
-            evaluate().to_stream(handler);
+            evaluate().to_stream(visitor);
         }
 
         JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&)")
@@ -2535,51 +1802,51 @@ public:
             evaluate().to_stream(os);
         }
 
-        JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, const basic_json_options<char_type>&)")
-        void to_stream(std::basic_ostream<char_type>& os, const basic_json_options<char_type>& options) const
+        JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, const basic_json_encode_options<char_type>&)")
+        void to_stream(std::basic_ostream<char_type>& os, const basic_json_encode_options<char_type>& options) const
         {
             evaluate().to_stream(os,options);
         }
 
-        JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, const basic_json_options<char_type>&, indenting)")
-        void to_stream(std::basic_ostream<char_type>& os, const basic_json_options<char_type>& options, bool pprint) const
+        JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, const basic_json_encode_options<char_type>&, indenting)")
+        void to_stream(std::basic_ostream<char_type>& os, const basic_json_encode_options<char_type>& options, bool pprint) const
         {
             evaluate().to_stream(os,options,pprint);
         }
 
-        JSONCONS_DEPRECATED_MSG("Instead, use resize(size_t)")
-        void resize_array(size_t n)
+        JSONCONS_DEPRECATED_MSG("Instead, use resize(std::size_t)")
+        void resize_array(std::size_t n)
         {
             evaluate().resize_array(n);
         }
 
         template <class T>
-        JSONCONS_DEPRECATED_MSG("Instead, use resize(size_t, T)")
-        void resize_array(size_t n, T val)
+        JSONCONS_DEPRECATED_MSG("Instead, use resize(std::size_t, T)")
+        void resize_array(std::size_t n, T val)
         {
             evaluate().resize_array(n,val);
         }
 
         JSONCONS_DEPRECATED_MSG("Instead, use object_range()")
-        range<object_iterator> members()
+        range<object_iterator, const_object_iterator> members()
         {
             return evaluate().members();
         }
 
         JSONCONS_DEPRECATED_MSG("Instead, use object_range()")
-        range<const_object_iterator> members() const
+        range<const_object_iterator, const_object_iterator> members() const
         {
             return evaluate().members();
         }
 
         JSONCONS_DEPRECATED_MSG("Instead, use array_range()")
-        range<array_iterator> elements()
+        range<array_iterator, const_array_iterator> elements()
         {
             return evaluate().elements();
         }
 
         JSONCONS_DEPRECATED_MSG("Instead, use array_range()")
-        range<const_array_iterator> elements() const
+        range<const_array_iterator, const_array_iterator> elements() const
         {
             return evaluate().elements();
         }
@@ -2634,25 +1901,25 @@ public:
 
         template <class T>
         JSONCONS_DEPRECATED_MSG("Instead, use get_with_default(const string_view_type&, T&&)")
-        basic_json get(const string_view_type& name, T&& default_val) const
+        basic_json get(const string_view_type& name, T&& default_value) const
         {
-            return evaluate().get(name,std::forward<T>(default_val));
+            return evaluate().get(name,std::forward<T>(default_value));
         }
 
-        JSONCONS_DEPRECATED_MSG("Instead, use get_with_default(const string_view_type&)")
+        JSONCONS_DEPRECATED_MSG("Instead, use at_or_null(const string_view_type&)")
         const basic_json& get(const string_view_type& name) const
         {
             return evaluate().get(name);
         }
 
         JSONCONS_DEPRECATED_MSG("Instead, use contains(const string_view_type&)")
-        bool has_member(const string_view_type& name) const
+        bool has_member(const string_view_type& name) const noexcept
         {
-            return evaluate().has_member(name);
+            return contains(name);
         }
 
         JSONCONS_DEPRECATED_MSG("Instead, use erase(const_object_iterator, const_object_iterator)")
-        void remove_range(size_t from_index, size_t to_index)
+        void remove_range(std::size_t from_index, std::size_t to_index)
         {
             evaluate().remove_range(from_index, to_index);
         }
@@ -2674,1109 +1941,409 @@ public:
         JSONCONS_DEPRECATED_MSG("Instead, use is_number()")
         bool is_numeric() const noexcept
         {
-            try
-            {
-                return is_number();
-            }
-            catch (...)
+            if (!parent_.contains(key_))
             {
                 return false;
             }
+            return is_number();
         }
 #endif
     };
 
-    typedef proxy<basic_json> proxy_type;
+    using proxy_type = proxy<basic_json>;
 
-    static basic_json parse(std::basic_istream<char_type>& is)
+    union 
     {
-        parse_error_handler_type err_handler;
-        return parse(is,err_handler);
-    }
+        common_storage common_stor_;
+        null_storage null_stor_;
+        bool_storage bool_stor_;
+        int64_storage int64_stor_;
+        uint64_storage uint64_stor_;
+        half_storage half_stor_;
+        double_storage double_stor_;
+        short_string_storage short_string_stor_;
+        long_string_storage long_string_stor_;
+        byte_string_storage byte_string_stor_;
+        array_storage array_stor_;
+        object_storage object_stor_;
+        empty_object_storage empty_object_stor_;
+    };
 
-    static basic_json parse(std::basic_istream<char_type>& is, std::function<bool(json_errc,const ser_context&)> err_handler)
+    void Destroy_()
     {
-        json_decoder<basic_json> handler;
-        basic_json_reader<char_type,stream_source<char_type>> reader(is, handler, err_handler);
-        reader.read_next();
-        reader.check_done();
-        if (!handler.is_valid())
+        switch (storage())
         {
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Failed to parse json stream"));
-        }
-        return handler.get_result();
-    }
-
-    static basic_json parse(const string_view_type& s)
-    {
-        parse_error_handler_type err_handler;
-        return parse(s,err_handler);
-    }
-
-    static basic_json parse(const string_view_type& s, std::function<bool(json_errc,const ser_context&)> err_handler)
-    {
-        json_decoder<basic_json> decoder;
-        basic_json_parser<char_type> parser(err_handler);
-
-        auto result = unicons::skip_bom(s.begin(), s.end());
-        if (result.ec != unicons::encoding_errc())
-        {
-            throw ser_error(result.ec);
-        }
-        size_t offset = result.it - s.begin();
-        parser.update(s.data()+offset,s.size()-offset);
-        parser.parse_some(decoder);
-        parser.finish_parse(decoder);
-        parser.check_done();
-        if (!decoder.is_valid())
-        {
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Failed to parse json string"));
-        }
-        return decoder.get_result();
-    }
-
-    static basic_json parse(std::basic_istream<char_type>& is, const basic_json_options<char_type>& options)
-    {
-        parse_error_handler_type err_handler;
-        return parse(is,options,err_handler);
-    }
-
-    static basic_json parse(std::basic_istream<char_type>& is, const basic_json_options<char_type>& options, std::function<bool(json_errc,const ser_context&)> err_handler)
-    {
-        json_decoder<basic_json> handler;
-        basic_json_reader<char_type,stream_source<char_type>> reader(is, handler, options, err_handler);
-        reader.read_next();
-        reader.check_done();
-        if (!handler.is_valid())
-        {
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Failed to parse json stream"));
-        }
-        return handler.get_result();
-    }
-
-    static basic_json parse(const string_view_type& s, const basic_json_options<char_type>& options)
-    {
-        parse_error_handler_type err_handler;
-        return parse(s,options,err_handler);
-    }
-
-    static basic_json parse(const string_view_type& s, const basic_json_options<char_type>& options, std::function<bool(json_errc,const ser_context&)> err_handler)
-    {
-        json_decoder<basic_json> decoder;
-        basic_json_parser<char_type> parser(options,err_handler);
-
-        auto result = unicons::skip_bom(s.begin(), s.end());
-        if (result.ec != unicons::encoding_errc())
-        {
-            throw ser_error(result.ec);
-        }
-        size_t offset = result.it - s.begin();
-        parser.update(s.data()+offset,s.size()-offset);
-        parser.parse_some(decoder);
-        parser.finish_parse(decoder);
-        parser.check_done();
-        if (!decoder.is_valid())
-        {
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Failed to parse json string"));
-        }
-        return decoder.get_result();
-    }
-
-    static basic_json make_array()
-    {
-        return basic_json(array());
-    }
-
-    static basic_json make_array(const array& a)
-    {
-        return basic_json(a);
-    }
-
-    static basic_json make_array(const array& a, allocator_type allocator)
-    {
-        return basic_json(variant(a, semantic_tag::none, allocator));
-    }
-
-    static basic_json make_array(std::initializer_list<basic_json> init, const Allocator& allocator = Allocator())
-    {
-        return array(std::move(init),allocator);
-    }
-
-    static basic_json make_array(size_t n, const Allocator& allocator = Allocator())
-    {
-        return array(n,allocator);
-    }
-
-    template <class T>
-    static basic_json make_array(size_t n, const T& val, const Allocator& allocator = Allocator())
-    {
-        return basic_json::array(n, val,allocator);
-    }
-
-    template <size_t dim>
-    static typename std::enable_if<dim==1,basic_json>::type make_array(size_t n)
-    {
-        return array(n);
-    }
-
-    template <size_t dim, class T>
-    static typename std::enable_if<dim==1,basic_json>::type make_array(size_t n, const T& val, const Allocator& allocator = Allocator())
-    {
-        return array(n,val,allocator);
-    }
-
-    template <size_t dim, typename... Args>
-    static typename std::enable_if<(dim>1),basic_json>::type make_array(size_t n, Args... args)
-    {
-        const size_t dim1 = dim - 1;
-
-        basic_json val = make_array<dim1>(std::forward<Args>(args)...);
-        val.resize(n);
-        for (size_t i = 0; i < n; ++i)
-        {
-            val[i] = make_array<dim1>(std::forward<Args>(args)...);
-        }
-        return val;
-    }
-
-    static const basic_json& null()
-    {
-        static basic_json a_null = basic_json(null_type(), semantic_tag::none);
-        return a_null;
-    }
-
-    variant var_;
-
-    basic_json(semantic_tag tag = semantic_tag::none) 
-        : var_(tag)
-    {
-    }
-
-    explicit basic_json(const Allocator& allocator, semantic_tag tag = semantic_tag::none) 
-        : var_(object(allocator),tag)
-    {
-    }
-
-    basic_json(const basic_json& val)
-        : var_(val.var_)
-    {
-    }
-
-    basic_json(const basic_json& val, const Allocator& allocator)
-        : var_(val.var_,allocator)
-    {
-    }
-
-    basic_json(basic_json&& other) noexcept
-        : var_(std::move(other.var_))
-    {
-    }
-
-    basic_json(basic_json&& other, const Allocator&) noexcept
-        : var_(std::move(other.var_) /*,allocator*/ )
-    {
-    }
-
-    basic_json(const variant& val)
-        : var_(val)
-    {
-    }
-
-    basic_json(variant&& other)
-        : var_(std::forward<variant>(other))
-    {
-    }
-
-    basic_json(const array& val, semantic_tag tag = semantic_tag::none)
-        : var_(val, tag)
-    {
-    }
-
-    basic_json(array&& other, semantic_tag tag = semantic_tag::none)
-        : var_(std::forward<array>(other), tag)
-    {
-    }
-
-    basic_json(const object& other, semantic_tag tag = semantic_tag::none)
-        : var_(other, tag)
-    {
-    }
-
-    basic_json(object&& other, semantic_tag tag = semantic_tag::none)
-        : var_(std::forward<object>(other), tag)
-    {
-    }
-
-    template <class ParentT>
-    basic_json(const proxy<ParentT>& other)
-        : var_(other.evaluate().var_)
-    {
-    }
-
-    template <class ParentT>
-    basic_json(const proxy<ParentT>& other, const Allocator& allocator)
-        : var_(other.evaluate().var_,allocator)
-    {
-    }
-
-    template <class T>
-    basic_json(const T& val)
-        : var_(json_type_traits<basic_json,T>::to_json(val).var_)
-    {
-    }
-
-    template <class T>
-    basic_json(const T& val, const Allocator& allocator)
-        : var_(json_type_traits<basic_json,T>::to_json(val,allocator).var_)
-    {
-    }
-
-    basic_json(const char_type* s, semantic_tag tag = semantic_tag::none)
-        : var_(s, char_traits_type::length(s), tag)
-    {
-    }
-
-    basic_json(const char_type* s, const Allocator& allocator)
-        : var_(s, char_traits_type::length(s), semantic_tag::none, allocator)
-    {
-    }
-
-    basic_json(double val, semantic_tag tag)
-        : var_(val, tag)
-    {
-    }
-
-    template <class T>
-    basic_json(T val, semantic_tag tag, typename std::enable_if<std::is_integral<T>::value && std::is_signed<T>::value>::type* = 0)
-        : var_(static_cast<int64_t>(val), tag)
-    {
-    }
-
-    template <class T>
-    basic_json(T val, semantic_tag tag, typename std::enable_if<std::is_integral<T>::value && !std::is_signed<T>::value>::type* = 0)
-        : var_(static_cast<uint64_t>(val), tag)
-    {
-    }
-
-    basic_json(const char_type *s, size_t length, semantic_tag tag = semantic_tag::none)
-        : var_(s, length, tag)
-    {
-    }
-
-    basic_json(const string_view_type& sv, semantic_tag tag)
-        : var_(sv.data(), sv.length(), tag)
-    {
-    }
-
-    basic_json(null_type val, semantic_tag tag)
-        : var_(val, tag)
-    {
-    }
-
-    basic_json(bool val, semantic_tag tag)
-        : var_(val, tag)
-    {
-    }
-
-    basic_json(const string_view_type& sv, semantic_tag tag, const Allocator& allocator)
-        : var_(sv.data(), sv.length(), tag, allocator)
-    {
-    }
-
-    basic_json(const char_type *s, size_t length, 
-               semantic_tag tag, const Allocator& allocator)
-        : var_(s, length, tag, allocator)
-    {
-    }
-
-    explicit basic_json(const byte_string_view& bs, 
-                        semantic_tag tag = semantic_tag::none)
-        : var_(bs, tag)
-    {
-    }
-
-    basic_json(const byte_string_view& bs, 
-               semantic_tag tag, 
-               const Allocator& allocator)
-        : var_(bs, tag, allocator)
-    {
-    }
-
-    explicit basic_json(const basic_bignum<byte_allocator_type>& bs)
-        : var_(bs)
-    {
-    }
-
-    explicit basic_json(const basic_bignum<byte_allocator_type>& bs, const Allocator& allocator)
-    : var_(bs, byte_allocator_type(allocator))
-    {
-    }
-
-    ~basic_json()
-    {
-    }
-
-    basic_json& operator=(const basic_json& rhs)
-    {
-        if (this != &rhs)
-        {
-            var_ = rhs.var_;
-        }
-        return *this;
-    }
-
-    basic_json& operator=(basic_json&& rhs) noexcept
-    {
-        if (this !=&rhs)
-        {
-            var_ = std::move(rhs.var_);
-        }
-        return *this;
-    }
-
-    template <class T>
-    basic_json& operator=(const T& val)
-    {
-        var_ = json_type_traits<basic_json,T>::to_json(val).var_;
-        return *this;
-    }
-
-    basic_json& operator=(const char_type* s)
-    {
-        var_ = variant(s, char_traits_type::length(s), semantic_tag::none);
-        return *this;
-    }
-
-    friend bool operator==(const basic_json& lhs, const basic_json& rhs)
-    {
-        return lhs.var_ == rhs.var_;
-    }
-
-    friend bool operator!=(const basic_json& lhs, const basic_json& rhs)
-    {
-        return !(lhs == rhs);
-    }
-
-    friend bool operator<(const basic_json& lhs, const basic_json& rhs) 
-    {
-        return lhs.var_ < rhs.var_;
-    }
-
-    friend bool operator<=(const basic_json& lhs, const basic_json& rhs)
-    {
-        return !(rhs < lhs);
-    }
-
-    friend bool operator>(const basic_json& lhs, const basic_json& rhs) 
-    {
-        return !(lhs <= rhs);
-    }
-
-    friend bool operator>=(const basic_json& lhs, const basic_json& rhs)
-    {
-        return !(lhs < rhs);
-    }
-
-    size_t size() const noexcept
-    {
-        switch (var_.type())
-        {
-        case storage_type::empty_object_val:
-            return 0;
-        case storage_type::object_val:
-            return object_value().size();
-        case storage_type::array_val:
-            return array_value().size();
-        default:
-            return 0;
-        }
-    }
-
-    basic_json& operator[](size_t i)
-    {
-        return at(i);
-    }
-
-    const basic_json& operator[](size_t i) const
-    {
-        return at(i);
-    }
-
-    proxy_type operator[](const string_view_type& name)
-    {
-        switch (var_.type())
-        {
-        case storage_type::empty_object_val: 
-            create_object_implicitly();
-            JSONCONS_FALLTHROUGH;
-        case storage_type::object_val:
-            return proxy_type(*this, name);
-            break;
-        default:
-            JSONCONS_THROW(not_an_object(name.data(),name.length()));
-            break;
-        }
-    }
-
-    const basic_json& operator[](const string_view_type& name) const
-    {
-        return at(name);
-    }
-
-    template <class SAllocator=std::allocator<char_type>>
-    void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s) const
-    {
-        typedef std::basic_string<char_type,char_traits_type,SAllocator> string_type;
-        basic_json_compressed_encoder<char_type,jsoncons::string_result<string_type>> encoder(s);
-        dump(encoder);
-    }
-
-    template <class SAllocator=std::allocator<char_type>>
-    void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s, indenting line_indent) const
-    {
-        typedef std::basic_string<char_type,char_traits_type,SAllocator> string_type;
-        if (line_indent == indenting::indent)
-        {
-            basic_json_encoder<char_type,jsoncons::string_result<string_type>> encoder(s);
-            dump(encoder);
-        }
-        else
-        {
-            basic_json_compressed_encoder<char_type,jsoncons::string_result<string_type>> encoder(s);
-            dump(encoder);
-        }
-    }
-
-    template <class SAllocator=std::allocator<char_type>>
-    void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s,
-              const basic_json_options<char_type>& options) const
-    {
-        typedef std::basic_string<char_type,char_traits_type,SAllocator> string_type;
-        basic_json_compressed_encoder<char_type,jsoncons::string_result<string_type>> encoder(s, options);
-        dump(encoder);
-    }
-
-    template <class SAllocator=std::allocator<char_type>>
-    void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s,
-              const basic_json_options<char_type>& options, 
-              indenting line_indent) const
-    {
-        typedef std::basic_string<char_type,char_traits_type,SAllocator> string_type;
-        if (line_indent == indenting::indent)
-        {
-            basic_json_encoder<char_type,jsoncons::string_result<string_type>> encoder(s, options);
-            dump(encoder);
-        }
-        else
-        {
-            basic_json_compressed_encoder<char_type,jsoncons::string_result<string_type>> encoder(s, options);
-            dump(encoder);
-        }
-    }
-
-    void dump(basic_json_content_handler<char_type>& handler) const
-    {
-        dump_noflush(handler);
-        handler.flush();
-    }
-
-    void dump(std::basic_ostream<char_type>& os) const
-    {
-        basic_json_compressed_encoder<char_type> encoder(os);
-        dump(encoder);
-    }
-
-    void dump(std::basic_ostream<char_type>& os, indenting line_indent) const
-    {
-        if (line_indent == indenting::indent)
-        {
-            basic_json_encoder<char_type> encoder(os);
-            dump(encoder);
-        }
-        else
-        {
-            basic_json_compressed_encoder<char_type> encoder(os);
-            dump(encoder);
-        }
-    }
-
-    void dump(std::basic_ostream<char_type>& os, const basic_json_options<char_type>& options) const
-    {
-        basic_json_compressed_encoder<char_type> encoder(os, options);
-        dump(encoder);
-    }
-
-    void dump(std::basic_ostream<char_type>& os, const basic_json_options<char_type>& options, indenting line_indent) const
-    {
-        if (line_indent == indenting::indent)
-        {
-            basic_json_encoder<char_type> encoder(os, options);
-            dump(encoder);
-        }
-        else
-        {
-            basic_json_compressed_encoder<char_type> encoder(os, options);
-            dump(encoder);
-        }
-    }
-
-    template <class SAllocator=std::allocator<char_type>>
-    std::basic_string<char_type,char_traits_type,SAllocator> to_string(const char_allocator_type& allocator=SAllocator()) const noexcept
-    {
-        typedef std::basic_string<char_type,char_traits_type,SAllocator> string_type;
-        string_type s(allocator);
-        basic_json_compressed_encoder<char_type,jsoncons::string_result<string_type>> encoder(s);
-        dump(encoder);
-        return s;
-    }
-
-    template <class SAllocator=std::allocator<char_type>>
-    std::basic_string<char_type,char_traits_type,SAllocator> to_string(const basic_json_options<char_type>& options,
-                                                                          const SAllocator& allocator=SAllocator()) const
-    {
-        typedef std::basic_string<char_type,char_traits_type,SAllocator> string_type;
-        string_type s(allocator);
-        basic_json_compressed_encoder<char_type,jsoncons::string_result<string_type>> encoder(s,options);
-        dump(encoder);
-        return s;
-    }
-
-    bool is_null() const noexcept
-    {
-        return var_.type() == storage_type::null_val;
-    }
-
-    allocator_type get_allocator() const
-    {
-        switch (var_.type())
-        {
-            case storage_type::long_string_val:
-            {
-                return var_.string_data_cast()->get_allocator();
-            }
-            case storage_type::byte_string_val:
-            {
-                return var_.byte_string_data_cast()->get_allocator();
-            }
-            case storage_type::array_val:
-            {
-                return var_.array_data_cast()->get_allocator();
-            }
-            case storage_type::object_val:
-            {
-                return var_.object_data_cast()->get_allocator();
-            }
-            default:
-                return allocator_type();
-        }
-    }
-
-    bool contains(const string_view_type& key) const
-    {
-        switch (var_.type())
-        {
-        case storage_type::object_val:
-            {
-                const_object_iterator it = object_value().find(key);
-                return it != object_range().end();
-            }
-            break;
-        default:
-            return false;
-        }
-    }
-
-    size_t count(const string_view_type& name) const
-    {
-        switch (var_.type())
-        {
-        case storage_type::object_val:
-            {
-                auto it = object_value().find(name);
-                if (it == object_range().end())
-                {
-                    return 0;
-                }
-                size_t count = 0;
-                while (it != object_range().end()&& it->key() == name)
-                {
-                    ++count;
-                    ++it;
-                }
-                return count;
-            }
-            break;
-        default:
-            return 0;
-        }
-    }
-
-    template<class T, class... Args>
-    bool is(Args&&... args) const noexcept
-    {
-        return json_type_traits<basic_json,T>::is(*this,std::forward<Args>(args)...);
-    }
-
-    bool is_string() const noexcept
-    {
-        return (var_.type() == storage_type::long_string_val) || (var_.type() == storage_type::short_string_val);
-    }
-
-    bool is_string_view() const noexcept
-    {
-        return is_string();
-    }
-
-    bool is_byte_string() const noexcept
-    {
-        return var_.type() == storage_type::byte_string_val;
-    }
-
-    bool is_byte_string_view() const noexcept
-    {
-        return is_byte_string();
-    }
-
-    bool is_bignum() const
-    {
-        switch (type())
-        {
-            case storage_type::short_string_val:
-            case storage_type::long_string_val:
-                return jsoncons::detail::is_integer(as_string_view().data(), as_string_view().length());
-            case storage_type::int64_val:
-            case storage_type::uint64_val:
-                return true;
-            default:
-                return false;
-        }
-    }
-
-    bool is_bool() const noexcept
-    {
-        return var_.type() == storage_type::bool_val;
-    }
-
-    bool is_object() const noexcept
-    {
-        return var_.type() == storage_type::object_val || var_.type() == storage_type::empty_object_val;
-    }
-
-    bool is_array() const noexcept
-    {
-        return var_.type() == storage_type::array_val;
-    }
-
-    bool is_int64() const noexcept
-    {
-        return var_.type() == storage_type::int64_val || (var_.type() == storage_type::uint64_val&& (as_integer<uint64_t>() <= static_cast<uint64_t>((std::numeric_limits<int64_t>::max)())));
-    }
-
-    bool is_uint64() const noexcept
-    {
-        return var_.type() == storage_type::uint64_val || (var_.type() == storage_type::int64_val&& as_integer<int64_t>() >= 0);
-    }
-
-    bool is_double() const noexcept
-    {
-        return var_.type() == storage_type::double_val;
-    }
-
-    bool is_number() const noexcept
-    {
-        switch (var_.type())
-        {
-            case storage_type::int64_val:
-            case storage_type::uint64_val:
-            case storage_type::double_val:
-                return true;
-            case storage_type::short_string_val:
-            case storage_type::long_string_val:
-                return var_.tag() == semantic_tag::bigint ||
-                       var_.tag() == semantic_tag::bigdec ||
-                       var_.tag() == semantic_tag::bigfloat;
-#if !defined(JSONCONS_NO_DEPRECATED)
-            case storage_type::array_val:
-                return var_.tag() == semantic_tag::bigfloat;
-#endif
-            default:
-                return false;
-        }
-    }
-
-    bool empty() const noexcept
-    {
-        switch (var_.type())
-        {
-            case storage_type::byte_string_val:
-                return var_.byte_string_data_cast()->length() == 0;
+            case storage_kind::long_string_value:
+                destroy_var<long_string_storage>();
                 break;
-            case storage_type::short_string_val:
-                return var_.short_string_data_cast()->length() == 0;
-            case storage_type::long_string_val:
-                return var_.string_data_cast()->length() == 0;
-            case storage_type::array_val:
-                return array_value().size() == 0;
-            case storage_type::empty_object_val:
-                return true;
-            case storage_type::object_val:
-                return object_value().size() == 0;
+            case storage_kind::byte_string_value:
+                destroy_var<byte_string_storage>();
+                break;
+            case storage_kind::array_value:
+                destroy_var<array_storage>();
+                break;
+            case storage_kind::object_value:
+                destroy_var<object_storage>();
+                break;
             default:
-                return false;
+                break;
         }
     }
 
-    size_t capacity() const
+    template <class VariantType, class... Args>
+    void construct(Args&&... args)
     {
-        switch (var_.type())
-        {
-        case storage_type::array_val:
-            return array_value().capacity();
-        case storage_type::object_val:
-            return object_value().capacity();
-        default:
-            return 0;
-        }
-    }
-
-    template<class U=Allocator>
-    void create_object_implicitly()
-    {
-        create_object_implicitly(std::integral_constant<bool, is_stateless<U>::value>());
-    }
-
-    void create_object_implicitly(std::false_type)
-    {
-        static_assert(std::true_type::value, "Cannot create object implicitly - allocator is stateful.");
-    }
-
-    void create_object_implicitly(std::true_type)
-    {
-        var_ = variant(object(Allocator()), semantic_tag::none);
-    }
-
-    void reserve(size_t n)
-    {
-        switch (var_.type())
-        {
-        case storage_type::array_val:
-            array_value().reserve(n);
-            break;
-        case storage_type::empty_object_val:
-        {
-            create_object_implicitly();
-            object_value().reserve(n);
-        }
-        break;
-        case storage_type::object_val:
-        {
-            object_value().reserve(n);
-        }
-            break;
-        default:
-            break;
-        }
-    }
-
-    void resize(size_t n)
-    {
-        switch (var_.type())
-        {
-        case storage_type::array_val:
-            array_value().resize(n);
-            break;
-        default:
-            break;
-        }
+        ::new (&cast<VariantType>()) VariantType(std::forward<Args>(args)...);
     }
 
     template <class T>
-    void resize(size_t n, T val)
+    void destroy_var()
     {
-        switch (var_.type())
+        cast<T>().~T();
+    }
+
+    template <class T>
+    struct identity { using type = T*; };
+
+    template <class T> 
+    T& cast()
+    {
+        return cast(identity<T>());
+    }
+
+    template <class T> 
+    const T& cast() const
+    {
+        return cast(identity<T>());
+    }
+
+    null_storage& cast(identity<null_storage>) 
+    {
+        return null_stor_;
+    }
+
+    const null_storage& cast(identity<null_storage>) const
+    {
+        return null_stor_;
+    }
+
+    empty_object_storage& cast(identity<empty_object_storage>) 
+    {
+        return empty_object_stor_;
+    }
+
+    const empty_object_storage& cast(identity<empty_object_storage>) const
+    {
+        return empty_object_stor_;
+    }
+
+    bool_storage& cast(identity<bool_storage>) 
+    {
+        return bool_stor_;
+    }
+
+    const bool_storage& cast(identity<bool_storage>) const
+    {
+        return bool_stor_;
+    }
+
+    int64_storage& cast(identity<int64_storage>) 
+    {
+        return int64_stor_;
+    }
+
+    const int64_storage& cast(identity<int64_storage>) const
+    {
+        return int64_stor_;
+    }
+
+    uint64_storage& cast(identity<uint64_storage>) 
+    {
+        return uint64_stor_;
+    }
+
+    const uint64_storage& cast(identity<uint64_storage>) const
+    {
+        return uint64_stor_;
+    }
+
+    half_storage& cast(identity<half_storage>)
+    {
+        return half_stor_;
+    }
+
+    const half_storage& cast(identity<half_storage>) const
+    {
+        return half_stor_;
+    }
+
+    double_storage& cast(identity<double_storage>) 
+    {
+        return double_stor_;
+    }
+
+    const double_storage& cast(identity<double_storage>) const
+    {
+        return double_stor_;
+    }
+
+    short_string_storage& cast(identity<short_string_storage>)
+    {
+        return short_string_stor_;
+    }
+
+    const short_string_storage& cast(identity<short_string_storage>) const
+    {
+        return short_string_stor_;
+    }
+
+    long_string_storage& cast(identity<long_string_storage>)
+    {
+        return long_string_stor_;
+    }
+
+    const long_string_storage& cast(identity<long_string_storage>) const
+    {
+        return long_string_stor_;
+    }
+
+    byte_string_storage& cast(identity<byte_string_storage>)
+    {
+        return byte_string_stor_;
+    }
+
+    const byte_string_storage& cast(identity<byte_string_storage>) const
+    {
+        return byte_string_stor_;
+    }
+
+    object_storage& cast(identity<object_storage>)
+    {
+        return object_stor_;
+    }
+
+    const object_storage& cast(identity<object_storage>) const
+    {
+        return object_stor_;
+    }
+
+    array_storage& cast(identity<array_storage>)
+    {
+        return array_stor_;
+    }
+
+    const array_storage& cast(identity<array_storage>) const
+    {
+        return array_stor_;
+    }
+
+    template <class TypeA, class TypeB>
+    void swap_a_b(basic_json& other)
+    {
+        TypeA& curA = cast<TypeA>();
+        TypeB& curB = other.cast<TypeB>();
+        TypeB tmpB(std::move(curB));
+        other.construct<TypeA>(std::move(curA));
+        construct<TypeB>(std::move(tmpB));
+    }
+
+    template <class TypeA>
+    void swap_a(basic_json& other)
+    {
+        switch (other.storage())
         {
-        case storage_type::array_val:
-            array_value().resize(n, val);
-            break;
-        default:
-            break;
+            case storage_kind::null_value         : swap_a_b<TypeA, null_storage>(other); break;
+            case storage_kind::empty_object_value : swap_a_b<TypeA, empty_object_storage>(other); break;
+            case storage_kind::bool_value         : swap_a_b<TypeA, bool_storage>(other); break;
+            case storage_kind::int64_value      : swap_a_b<TypeA, int64_storage>(other); break;
+            case storage_kind::uint64_value     : swap_a_b<TypeA, uint64_storage>(other); break;
+            case storage_kind::half_value       : swap_a_b<TypeA, half_storage>(other); break;
+            case storage_kind::double_value       : swap_a_b<TypeA, double_storage>(other); break;
+            case storage_kind::short_string_value : swap_a_b<TypeA, short_string_storage>(other); break;
+            case storage_kind::long_string_value       : swap_a_b<TypeA, long_string_storage>(other); break;
+            case storage_kind::byte_string_value  : swap_a_b<TypeA, byte_string_storage>(other); break;
+            case storage_kind::array_value        : swap_a_b<TypeA, array_storage>(other); break;
+            case storage_kind::object_value       : swap_a_b<TypeA, object_storage>(other); break;
+            default:
+                JSONCONS_UNREACHABLE();
+                break;
         }
     }
 
-    template<class T, class... Args>
-    T as(Args&&... args) const
+    void Init_(const basic_json& val)
     {
-        return json_type_traits<basic_json,T>::as(*this,std::forward<Args>(args)...);
-    }
-
-    bool as_bool() const 
-    {
-        switch (var_.type())
+        switch (val.storage())
         {
-        case storage_type::short_string_val:
-        case storage_type::long_string_val:
-            if (var_.tag() == semantic_tag::bigint)
-            {
-                return static_cast<bool>(var_.as_bignum());
-            }
-
-            try
-            {
-                basic_json j = basic_json::parse(as_string_view());
-                return j.as_bool();
-            }
-            catch (...)
-            {
-                JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not a bool"));
-            }
-            break;
-        case storage_type::bool_val:
-            return var_.bool_data_cast()->value();
-        case storage_type::double_val:
-            return var_.double_data_cast()->value() != 0.0;
-        case storage_type::int64_val:
-            return var_.int64_data_cast()->value() != 0;
-        case storage_type::uint64_val:
-            return var_.uint64_data_cast()->value() != 0;
-        default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not a bool"));
+            case storage_kind::null_value:
+                construct<null_storage>(val.cast<null_storage>());
+                break;
+            case storage_kind::empty_object_value:
+                construct<empty_object_storage>(val.cast<empty_object_storage>());
+                break;
+            case storage_kind::bool_value:
+                construct<bool_storage>(val.cast<bool_storage>());
+                break;
+            case storage_kind::int64_value:
+                construct<int64_storage>(val.cast<int64_storage>());
+                break;
+            case storage_kind::uint64_value:
+                construct<uint64_storage>(val.cast<uint64_storage>());
+                break;
+            case storage_kind::half_value:
+                construct<half_storage>(val.cast<half_storage>());
+                break;
+            case storage_kind::double_value:
+                construct<double_storage>(val.cast<double_storage>());
+                break;
+            case storage_kind::short_string_value:
+                construct<short_string_storage>(val.cast<short_string_storage>());
+                break;
+            case storage_kind::long_string_value:
+                construct<long_string_storage>(val.cast<long_string_storage>());
+                break;
+            case storage_kind::byte_string_value:
+                construct<byte_string_storage>(val.cast<byte_string_storage>());
+                break;
+            case storage_kind::object_value:
+                construct<object_storage>(val.cast<object_storage>());
+                break;
+            case storage_kind::array_value:
+                construct<array_storage>(val.cast<array_storage>());
+                break;
+            default:
+                break;
         }
     }
 
-    template <class T
-#if !defined(JSONCONS_NO_DEPRECATED)
-         = int64_t
-#endif
-    >
-    T as_integer() const
+    void Init_(const basic_json& val, const Allocator& a)
     {
-        switch (var_.type())
+        switch (val.storage())
         {
-        case storage_type::short_string_val:
-        case storage_type::long_string_val:
+            case storage_kind::null_value:
+            case storage_kind::empty_object_value:
+            case storage_kind::bool_value:
+            case storage_kind::int64_value:
+            case storage_kind::uint64_value:
+            case storage_kind::half_value:
+            case storage_kind::double_value:
+            case storage_kind::short_string_value:
+                Init_(val);
+                break;
+            case storage_kind::long_string_value:
+                construct<long_string_storage>(val.cast<long_string_storage>(),a);
+                break;
+            case storage_kind::byte_string_value:
+                construct<byte_string_storage>(val.cast<byte_string_storage>(),a);
+                break;
+            case storage_kind::array_value:
+                construct<array_storage>(val.cast<array_storage>(),a);
+                break;
+            case storage_kind::object_value:
+                construct<object_storage>(val.cast<object_storage>(),a);
+                break;
+            default:
+                break;
+        }
+    }
+
+    void Init_rv_(basic_json&& val) noexcept
+    {
+        switch (val.storage())
+        {
+            case storage_kind::null_value:
+            case storage_kind::empty_object_value:
+            case storage_kind::half_value:
+            case storage_kind::double_value:
+            case storage_kind::int64_value:
+            case storage_kind::uint64_value:
+            case storage_kind::bool_value:
+            case storage_kind::short_string_value:
+                Init_(val);
+                break;
+            case storage_kind::long_string_value:
+            case storage_kind::byte_string_value:
+            case storage_kind::array_value:
+            case storage_kind::object_value:
             {
-                auto result = jsoncons::detail::to_integer<T>(as_string_view().data(), as_string_view().length());
-                if (result.ec != jsoncons::detail::to_integer_errc())
+                construct<null_storage>();
+                swap(val);
+                break;
+            }
+            default:
+                JSONCONS_UNREACHABLE();
+                break;
+        }
+    }
+
+    void Init_rv_(basic_json&& val, const Allocator&, std::true_type) noexcept
+    {
+        Init_rv_(std::forward<basic_json>(val));
+    }
+
+    void Init_rv_(basic_json&& val, const Allocator& a, std::false_type) noexcept
+    {
+        switch (val.storage())
+        {
+            case storage_kind::null_value:
+            case storage_kind::empty_object_value:
+            case storage_kind::half_value:
+            case storage_kind::double_value:
+            case storage_kind::int64_value:
+            case storage_kind::uint64_value:
+            case storage_kind::bool_value:
+            case storage_kind::short_string_value:
+                Init_(std::forward<basic_json>(val));
+                break;
+            case storage_kind::long_string_value:
+            {
+                if (a == val.cast<long_string_storage>().get_allocator())
                 {
-                    JSONCONS_THROW(json_runtime_error<std::runtime_error>(make_error_code(result.ec).message()));
-                }
-                return result.value;
-            }
-        case storage_type::double_val:
-            return static_cast<T>(var_.double_data_cast()->value());
-        case storage_type::int64_val:
-            return static_cast<T>(var_.int64_data_cast()->value());
-        case storage_type::uint64_val:
-            return static_cast<T>(var_.uint64_data_cast()->value());
-        case storage_type::bool_val:
-            return static_cast<T>(var_.bool_data_cast()->value() ? 1 : 0);
-        default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not an integer"));
-        }
-    }
-
-    double as_double() const
-    {
-        switch (var_.type())
-        {
-            case storage_type::short_string_val:
-            case storage_type::long_string_val:
-            {
-                jsoncons::detail::string_to_double to_double;
-                // to_double() throws std::invalid_argument if conversion fails
-                return to_double(as_cstring(), as_string_view().length());
-            }
-            case storage_type::double_val:
-                return var_.double_data_cast()->value();
-            case storage_type::int64_val:
-                return static_cast<double>(var_.int64_data_cast()->value());
-            case storage_type::uint64_val:
-                return static_cast<double>(var_.uint64_data_cast()->value());
-#if !defined(JSONCONS_NO_DEPRECATED)
-            case storage_type::array_val:
-                if (tag() == semantic_tag::bigfloat)
-                {
-                    jsoncons::detail::string_to_double to_double;
-                    auto s = as_string();
-                    return to_double(s.c_str(), s.length());
+                    Init_rv_(std::forward<basic_json>(val), a, std::true_type());
                 }
                 else
                 {
-                    JSONCONS_THROW(json_runtime_error<std::invalid_argument>("Not a double"));
+                    Init_(val,a);
                 }
-#endif
-            default:
-                JSONCONS_THROW(json_runtime_error<std::invalid_argument>("Not a double"));
-        }
-    }
-
-    string_view_type as_string_view() const
-    {
-        return var_.as_string_view();
-    }
-
-    byte_string_view as_byte_string_view() const
-    {
-        return var_.as_byte_string_view();
-    }
-
-    template <typename BAllocator=std::allocator<uint8_t>>
-    basic_byte_string<BAllocator> as_byte_string() const
-    {
-        return var_.template as_byte_string<BAllocator>();
-    }
-
-    basic_bignum<byte_allocator_type> as_bignum() const
-    {
-        return var_.as_bignum();
-    }
-
-    template <class SAllocator=std::allocator<char_type>>
-    std::basic_string<char_type,char_traits_type,SAllocator> as_string() const 
-    {
-        return as_string(basic_json_options<char_type>(),SAllocator());
-    }
-
-    template <class SAllocator=std::allocator<char_type>>
-    std::basic_string<char_type,char_traits_type,SAllocator> as_string(const SAllocator& allocator) const 
-    {
-        return as_string(basic_json_options<char_type>(),allocator);
-    }
-
-    template <class SAllocator=std::allocator<char_type>>
-    std::basic_string<char_type,char_traits_type,SAllocator> as_string(const basic_json_options<char_type>& options) const 
-    {
-        return as_string(options,SAllocator());
-    }
-
-    template <class SAllocator=std::allocator<char_type>>
-    std::basic_string<char_type,char_traits_type,SAllocator> as_string(const basic_json_options<char_type>& options,
-                          const SAllocator& allocator) const 
-    {
-        typedef std::basic_string<char_type,char_traits_type,SAllocator> string_type;
-        switch (var_.type())
-        {
-            case storage_type::short_string_val:
-            case storage_type::long_string_val:
-            {
-                return string_type(as_string_view().data(),as_string_view().length(),allocator);
+                break;
             }
-            case storage_type::byte_string_val:
+            case storage_kind::byte_string_value:
             {
-                string_type s(allocator);
-                byte_string_chars_format format = jsoncons::detail::resolve_byte_string_chars_format(options.byte_string_format(), 
-                                                                                           byte_string_chars_format::none, 
-                                                                                           byte_string_chars_format::base64url);
-                switch (format)
+                if (a == val.cast<byte_string_storage>().get_allocator())
                 {
-                    case byte_string_chars_format::base64:
-                        encode_base64(var_.byte_string_data_cast()->begin(), 
-                                      var_.byte_string_data_cast()->end(),
-                                      s);
-                        break;
-                    case byte_string_chars_format::base16:
-                        encode_base16(var_.byte_string_data_cast()->begin(), 
-                                      var_.byte_string_data_cast()->end(),
-                                      s);
-                        break;
-                    default:
-                        encode_base64url(var_.byte_string_data_cast()->begin(), 
-                                         var_.byte_string_data_cast()->end(),
-                                         s);
-                        break;
-                }
-                return s;
-            }
-            case storage_type::array_val:
-            {
-                string_type s(allocator);
-#if !defined(JSONCONS_NO_DEPRECATED)
-                if (tag() == semantic_tag::bigfloat)
-                {
-                    JSONCONS_ASSERT(size() == 2);
-                    int64_t exp = at(0).template as_integer<int64_t>();
-                    string_type mantissa = at(1).as_string();
-                    bignum n(mantissa);
-                    int64_t new_exp = 0;
-                    bignum five(5);
-                    if (exp > 0)
-                    {
-                        new_exp = static_cast<int64_t>(std::floor(exp*std::log(2)/std::log(10)));
-                        bignum five_power = power(five,(unsigned)new_exp);
-                        uint64_t binShift = exp - new_exp;
-                        n = ((n) << (unsigned)binShift)/five_power;
-                    }
-                    else
-                    {
-                        new_exp = static_cast<int64_t>(std::ceil(-exp*std::log(2)/std::log(10)));
-                        bignum five_power = power(five,(unsigned)new_exp);
-                        uint64_t binShift = -exp - new_exp;
-                        n = (n*five_power) >> (unsigned)binShift;
-                    }
-
-                    std::string str;
-                    n.dump(str);
-                    if (str[0] == '-')
-                    {
-                        s.push_back('-');
-                        jsoncons::detail::prettify_string(str.c_str()+1, str.size()-1, -(int)new_exp, -4, 17, s);
-                    }
-                    else
-                    {
-                        jsoncons::detail::prettify_string(str.c_str(), str.size(), -(int)new_exp, -4, 17, s);
-                    }
+                    Init_rv_(std::forward<basic_json>(val), a, std::true_type());
                 }
                 else
-#endif
                 {
-                    basic_json_compressed_encoder<char_type,jsoncons::string_result<string_type>> encoder(s,options);
-                    dump(encoder);
+                    Init_(val,a);
                 }
-                return s;
+                break;
             }
-            default:
+            case storage_kind::object_value:
             {
-                string_type s(allocator);
-                basic_json_compressed_encoder<char_type,jsoncons::string_result<string_type>> encoder(s,options);
-                dump(encoder);
-                return s;
+                if (a == val.cast<object_storage>().get_allocator())
+                {
+                    Init_rv_(std::forward<basic_json>(val), a, std::true_type());
+                }
+                else
+                {
+                    Init_(val,a);
+                }
+                break;
             }
-        }
-    }
-
-    const char_type* as_cstring() const
-    {
-        switch (var_.type())
-        {
-        case storage_type::short_string_val:
-            return var_.short_string_data_cast()->c_str();
-        case storage_type::long_string_val:
-            return var_.string_data_cast()->c_str();
+            case storage_kind::array_value:
+            {
+                if (a == val.cast<array_storage>().get_allocator())
+                {
+                    Init_rv_(std::forward<basic_json>(val), a, std::true_type());
+                }
+                else
+                {
+                    Init_(val,a);
+                }
+                break;
+            }
         default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not a cstring"));
-        }
-    }
-
-    basic_json& at(const string_view_type& name)
-    {
-        switch (var_.type())
-        {
-        case storage_type::empty_object_val:
-            JSONCONS_THROW(key_not_found(name.data(),name.length()));
-        case storage_type::object_val:
-            {
-                auto it = object_value().find(name);
-                if (it == object_range().end())
-                {
-                    JSONCONS_THROW(key_not_found(name.data(),name.length()));
-                }
-                return it->value();
-            }
             break;
-        default:
-            {
-                JSONCONS_THROW(not_an_object(name.data(),name.length()));
-            }
         }
     }
 
@@ -3804,16 +2371,1446 @@ public:
         return at(name);
     }
 
-    const basic_json& at(const string_view_type& name) const
+public:
+
+    basic_json& operator=(const basic_json& val)
     {
-        switch (var_.type())
+        if (this != &val)
         {
-        case storage_type::empty_object_val:
-            JSONCONS_THROW(key_not_found(name.data(),name.length()));
-        case storage_type::object_val:
+            Destroy_();
+            Init_(val);
+        }
+        return *this;
+    }
+
+    basic_json& operator=(basic_json&& val) noexcept
+    {
+        if (this !=&val)
+        {
+            swap(val);
+        }
+        return *this;
+    }
+
+    storage_kind storage() const
+    {
+        // It is legal to access 'common_stor_.storage_' even though 
+        // common_stor_ is not the active member of the union because 'storage_' 
+        // is a part of the common initial sequence of all union members
+        // as defined in 11.4-25 of the Standard.
+        return static_cast<storage_kind>(common_stor_.storage_);
+    }
+
+    semantic_tag tag() const
+    {
+        // It is legal to access 'common_stor_.tag_' even though 
+        // common_stor_ is not the active member of the union because 'tag_' 
+        // is a part of the common initial sequence of all union members
+        // as defined in 11.4-25 of the Standard.
+        return common_stor_.tag_;
+    }
+
+    std::size_t size() const
+    {
+        switch (storage())
+        {
+            case storage_kind::array_value:
+                return cast<array_storage>().value().size();
+            case storage_kind::empty_object_value:
+                return 0;
+            case storage_kind::object_value:
+                return cast<object_storage>().value().size();
+            default:
+                return 0;
+        }
+    }
+
+    string_view_type as_string_view() const
+    {
+        switch (storage())
+        {
+            case storage_kind::short_string_value:
+                return string_view_type(cast<short_string_storage>().data(),cast<short_string_storage>().length());
+            case storage_kind::long_string_value:
+                return string_view_type(cast<long_string_storage>().data(),cast<long_string_storage>().length());
+            default:
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Not a string"));
+        }
+    }
+
+    template <typename BAllocator=std::allocator<uint8_t>>
+    basic_byte_string<BAllocator> as_byte_string() const
+    {
+        using byte_string_type = basic_byte_string<BAllocator>;
+        converter<byte_string_type> convert;
+        std::error_code ec;
+
+        switch (storage())
+        {
+            case storage_kind::short_string_value:
+            case storage_kind::long_string_value:
+            {
+                byte_string_type v = convert.from(as_string_view(),tag(),ec);
+                if (ec)
+                {
+                    JSONCONS_THROW(ser_error(ec));
+                }
+                return v;
+            }
+            case storage_kind::byte_string_value:
+                return basic_byte_string<BAllocator>(cast<byte_string_storage>().data(),cast<byte_string_storage>().length());
+            default:
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Not a byte string"));
+        }
+    }
+
+    byte_string_view as_byte_string_view() const
+    {
+        switch (storage())
+        {
+        case storage_kind::byte_string_value:
+            return byte_string_view(cast<byte_string_storage>().data(),cast<byte_string_storage>().length());
+        default:
+            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not a byte string"));
+        }
+    }
+
+    friend bool operator==(const basic_json& lhs, const basic_json& rhs) noexcept
+    {
+        if (&lhs ==&rhs)
+        {
+            return true;
+        }
+        switch (lhs.storage())
+        {
+            case storage_kind::null_value:
+                switch (rhs.storage())
+                {
+                    case storage_kind::null_value:
+                        return true;
+                    default:
+                        return false;
+                }
+                break;
+            case storage_kind::empty_object_value:
+                switch (rhs.storage())
+                {
+                    case storage_kind::empty_object_value:
+                        return true;
+                    case storage_kind::object_value:
+                        return rhs.size() == 0;
+                    default:
+                        return false;
+                }
+                break;
+            case storage_kind::bool_value:
+                switch (rhs.storage())
+                {
+                    case storage_kind::bool_value:
+                        return lhs.cast<bool_storage>().value() == rhs.cast<bool_storage>().value();
+                    default:
+                        return false;
+                }
+                break;
+            case storage_kind::int64_value:
+                switch (rhs.storage())
+                {
+                    case storage_kind::int64_value:
+                        return lhs.cast<int64_storage>().value() == rhs.cast<int64_storage>().value();
+                    case storage_kind::uint64_value:
+                        return lhs.cast<int64_storage>().value() >= 0 ? static_cast<uint64_t>(lhs.cast<int64_storage>().value()) == rhs.cast<uint64_storage>().value() : false;
+                    case storage_kind::half_value:
+                        return static_cast<double>(lhs.cast<int64_storage>().value()) == jsoncons::detail::decode_half(rhs.cast<half_storage>().value());
+                    case storage_kind::double_value:
+                        return static_cast<double>(lhs.cast<int64_storage>().value()) == rhs.cast<double_storage>().value();
+                    default:
+                        return false;
+                }
+                break;
+            case storage_kind::uint64_value:
+                switch (rhs.storage())
+                {
+                    case storage_kind::int64_value:
+                        return rhs.cast<int64_storage>().value() >= 0 ? lhs.cast<uint64_storage>().value() == static_cast<uint64_t>(rhs.cast<int64_storage>().value()) : false;
+                    case storage_kind::uint64_value:
+                        return lhs.cast<uint64_storage>().value() == rhs.cast<uint64_storage>().value();
+                    case storage_kind::half_value:
+                        return static_cast<double>(lhs.cast<uint64_storage>().value()) == jsoncons::detail::decode_half(rhs.cast<half_storage>().value());
+                    case storage_kind::double_value:
+                        return static_cast<double>(lhs.cast<uint64_storage>().value()) == rhs.cast<double_storage>().value();
+                    default:
+                        return false;
+                }
+                break;
+            case storage_kind::half_value:
+                switch (rhs.storage())
+                {
+                    case storage_kind::half_value:
+                        return lhs.cast<half_storage>().value() == rhs.cast<half_storage>().value();
+                    default:
+                        return basic_json(jsoncons::detail::decode_half(lhs.cast<half_storage>().value()),semantic_tag::none) == rhs;
+                }
+                break;
+            case storage_kind::double_value:
+                switch (rhs.storage())
+                {
+                    case storage_kind::int64_value:
+                        return lhs.cast<double_storage>().value() == static_cast<double>(rhs.cast<int64_storage>().value());
+                    case storage_kind::uint64_value:
+                        return lhs.cast<double_storage>().value() == static_cast<double>(rhs.cast<uint64_storage>().value());
+                    case storage_kind::half_value:
+                        return lhs.cast<double_storage>().value() == jsoncons::detail::decode_half(rhs.cast<half_storage>().value());
+                    case storage_kind::double_value:
+                        return lhs.cast<double_storage>().value() == rhs.cast<double_storage>().value();
+                    default:
+                        return false;
+                }
+                break;
+            case storage_kind::short_string_value:
+            case storage_kind::long_string_value:
+                switch (rhs.storage())
+                {
+                    case storage_kind::short_string_value:
+                        return lhs.as_string_view() == rhs.as_string_view();
+                    case storage_kind::long_string_value:
+                        return lhs.as_string_view() == rhs.as_string_view();
+                    default:
+                        return false;
+                }
+                break;
+            case storage_kind::byte_string_value:
+                switch (rhs.storage())
+                {
+                    case storage_kind::byte_string_value:
+                    {
+                        return lhs.as_byte_string_view() == rhs.as_byte_string_view();
+                    }
+                    default:
+                        return false;
+                }
+                break;
+            case storage_kind::array_value:
+                switch (rhs.storage())
+                {
+                    case storage_kind::array_value:
+                        return lhs.cast<array_storage>().value() == rhs.cast<array_storage>().value();
+                    default:
+                        return false;
+                }
+                break;
+            case storage_kind::object_value:
+                switch (rhs.storage())
+                {
+                    case storage_kind::empty_object_value:
+                        return lhs.size() == 0;
+                    case storage_kind::object_value:
+                        return lhs.cast<object_storage>().value() == rhs.cast<object_storage>().value();
+                    default:
+                        return false;
+                }
+                break;
+            default:
+                JSONCONS_UNREACHABLE();
+                break;
+        }
+    }
+
+    friend bool operator<(const basic_json& lhs, const basic_json& rhs) noexcept
+    {
+        if (&lhs == &rhs)
+        {
+            return false;
+        }
+        switch (lhs.storage())
+        {
+            case storage_kind::null_value:
+                return (int)lhs.storage() < (int)rhs.storage();
+            case storage_kind::empty_object_value:
+                switch (rhs.storage())
+                {
+                    case storage_kind::empty_object_value:
+                        return false;
+                    case storage_kind::object_value:
+                        return rhs.size() != 0;
+                    default:
+                        return (int)lhs.storage() < (int)rhs.storage();
+                }
+                break;
+            case storage_kind::bool_value:
+                switch (rhs.storage())
+                {
+                    case storage_kind::bool_value:
+                        return lhs.cast<bool_storage>().value() < rhs.cast<bool_storage>().value();
+                    default:
+                        return (int)lhs.storage() < (int)rhs.storage();
+                }
+                break;
+            case storage_kind::int64_value:
+                switch (rhs.storage())
+                {
+                    case storage_kind::int64_value:
+                        return lhs.cast<int64_storage>().value() < rhs.cast<int64_storage>().value();
+                    case storage_kind::uint64_value:
+                        return lhs.cast<int64_storage>().value() >= 0 ? static_cast<uint64_t>(lhs.cast<int64_storage>().value()) < rhs.cast<uint64_storage>().value() : true;
+                    case storage_kind::double_value:
+                        return static_cast<double>(lhs.cast<int64_storage>().value()) < rhs.cast<double_storage>().value();
+                    default:
+                        return (int)lhs.storage() < (int)rhs.storage();
+                }
+                break;
+            case storage_kind::uint64_value:
+                switch (rhs.storage())
+                {
+                    case storage_kind::int64_value:
+                        return rhs.cast<int64_storage>().value() >= 0 ? lhs.cast<uint64_storage>().value() < static_cast<uint64_t>(rhs.cast<int64_storage>().value()) : false;
+                    case storage_kind::uint64_value:
+                        return lhs.cast<uint64_storage>().value() < rhs.cast<uint64_storage>().value();
+                    case storage_kind::double_value:
+                        return static_cast<double>(lhs.cast<uint64_storage>().value()) < rhs.cast<double_storage>().value();
+                    default:
+                        return (int)lhs.storage() < (int)rhs.storage();
+                }
+                break;
+            case storage_kind::double_value:
+                switch (rhs.storage())
+                {
+                    case storage_kind::int64_value:
+                        return lhs.cast<double_storage>().value() < static_cast<double>(rhs.cast<int64_storage>().value());
+                    case storage_kind::uint64_value:
+                        return lhs.cast<double_storage>().value() < static_cast<double>(rhs.cast<uint64_storage>().value());
+                    case storage_kind::double_value:
+                        return lhs.cast<double_storage>().value() < rhs.cast<double_storage>().value();
+                    default:
+                        return (int)lhs.storage() < (int)rhs.storage();
+                }
+                break;
+            case storage_kind::short_string_value:
+            case storage_kind::long_string_value:
+                switch (rhs.storage())
+                {
+                    case storage_kind::short_string_value:
+                        return lhs.as_string_view() < rhs.as_string_view();
+                    case storage_kind::long_string_value:
+                        return lhs.as_string_view() < rhs.as_string_view();
+                    default:
+                        return (int)lhs.storage() < (int)rhs.storage();
+                }
+                break;
+            case storage_kind::byte_string_value:
+                switch (rhs.storage())
+                {
+                    case storage_kind::byte_string_value:
+                    {
+                        return lhs.as_byte_string_view() < rhs.as_byte_string_view();
+                    }
+                    default:
+                        return (int)lhs.storage() < (int)rhs.storage();
+                }
+                break;
+            case storage_kind::array_value:
+                switch (rhs.storage())
+                {
+                    case storage_kind::array_value:
+                        return lhs.cast<array_storage>().value() < rhs.cast<array_storage>().value();
+                    default:
+                        return (int)lhs.storage() < (int)rhs.storage();
+                }
+                break;
+            case storage_kind::object_value:
+                switch (rhs.storage())
+                {
+                    case storage_kind::empty_object_value:
+                        return false;
+                    case storage_kind::object_value:
+                        return lhs.cast<object_storage>().value() < rhs.cast<object_storage>().value();
+                    default:
+                        return (int)lhs.storage() < (int)rhs.storage();
+                }
+                break;
+            default:
+                JSONCONS_UNREACHABLE();
+                break;
+        }
+    }
+
+    friend bool operator!=(const basic_json& lhs, const basic_json& rhs) noexcept
+    {
+        return !(lhs == rhs);
+    }
+
+    friend bool operator<=(const basic_json& lhs, const basic_json& rhs) noexcept
+    {
+        return !(rhs < lhs);
+    }
+
+    friend bool operator>(const basic_json& lhs, const basic_json& rhs) noexcept
+    {
+        return !(lhs <= rhs);
+    }
+
+    friend bool operator>=(const basic_json& lhs, const basic_json& rhs) noexcept
+    {
+        return !(lhs < rhs);
+    }
+
+    void swap(basic_json& other) noexcept
+    {
+        if (this == &other)
+        {
+            return;
+        }
+
+        switch (storage())
+        {
+            case storage_kind::null_value: swap_a<null_storage>(other); break;
+            case storage_kind::empty_object_value : swap_a<empty_object_storage>(other); break;
+            case storage_kind::bool_value: swap_a<bool_storage>(other); break;
+            case storage_kind::int64_value: swap_a<int64_storage>(other); break;
+            case storage_kind::uint64_value: swap_a<uint64_storage>(other); break;
+            case storage_kind::half_value: swap_a<half_storage>(other); break;
+            case storage_kind::double_value: swap_a<double_storage>(other); break;
+            case storage_kind::short_string_value: swap_a<short_string_storage>(other); break;
+            case storage_kind::long_string_value: swap_a<long_string_storage>(other); break;
+            case storage_kind::byte_string_value: swap_a<byte_string_storage>(other); break;
+            case storage_kind::array_value: swap_a<array_storage>(other); break;
+            case storage_kind::object_value: swap_a<object_storage>(other); break;
+            default:
+                JSONCONS_UNREACHABLE();
+                break;
+        }
+    }
+    // from stream
+
+    static basic_json parse(std::basic_istream<char_type>& is, 
+                            const basic_json_decode_options<char_type>& options = basic_json_decode_options<CharT>(), 
+                            std::function<bool(json_errc,const ser_context&)> err_handler = default_json_parsing())
+    {
+        json_decoder<basic_json> visitor;
+        basic_json_reader<char_type,stream_source<char_type>> reader(is, visitor, options, err_handler);
+        reader.read_next();
+        reader.check_done();
+        if (!visitor.is_valid())
+        {
+            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Failed to parse json stream"));
+        }
+        return visitor.get_result();
+    }
+
+    static basic_json parse(std::basic_istream<char_type>& is, std::function<bool(json_errc,const ser_context&)> err_handler)
+    {
+        return parse(is, basic_json_decode_options<CharT>(), err_handler);
+    }
+
+    // from string
+
+    static basic_json parse(const string_view_type& s, 
+                            const basic_json_decode_options<char_type>& options = basic_json_decode_options<CharT>(), 
+                            std::function<bool(json_errc,const ser_context&)> err_handler = default_json_parsing())
+    {
+        json_decoder<basic_json> decoder;
+        basic_json_parser<char_type> parser(options,err_handler);
+
+        auto result = unicons::skip_bom(s.begin(), s.end());
+        if (result.ec != unicons::encoding_errc())
+        {
+            JSONCONS_THROW(ser_error(result.ec));
+        }
+        std::size_t offset = result.it - s.begin();
+        parser.update(s.data()+offset,s.size()-offset);
+        parser.parse_some(decoder);
+        parser.finish_parse(decoder);
+        parser.check_done();
+        if (!decoder.is_valid())
+        {
+            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Failed to parse json string"));
+        }
+        return decoder.get_result();
+    }
+
+    static basic_json parse(const string_view_type& s, 
+                            std::function<bool(json_errc,const ser_context&)> err_handler)
+    {
+        return parse(s, basic_json_decode_options<CharT>(), err_handler);
+    }
+
+    // from iterator
+
+    template <class InputIt>
+    static basic_json parse(InputIt first, InputIt last, 
+                            const basic_json_decode_options<char_type>& options = basic_json_decode_options<CharT>(), 
+                            std::function<bool(json_errc,const ser_context&)> err_handler = default_json_parsing())
+    {
+        json_decoder<basic_json> visitor;
+        basic_json_reader<char_type,iterator_source<InputIt>> reader(iterator_source<InputIt>(std::forward<InputIt>(first),std::forward<InputIt>(last)), visitor, options, err_handler);
+        reader.read_next();
+        reader.check_done();
+        if (!visitor.is_valid())
+        {
+            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Failed to parse json stream"));
+        }
+        return visitor.get_result();
+    }
+
+    template <class InputIt>
+    static basic_json parse(InputIt first, InputIt last, 
+                            std::function<bool(json_errc,const ser_context&)> err_handler)
+    {
+        return parse(first, last, basic_json_decode_options<CharT>(), err_handler);
+    }
+
+    static basic_json make_array()
+    {
+        return basic_json(array());
+    }
+
+    static basic_json make_array(const array& a)
+    {
+        return basic_json(a);
+    }
+
+    static basic_json make_array(const array& a, allocator_type alloc)
+    {
+        return basic_json(basic_json(a, semantic_tag::none, alloc));
+    }
+
+    static basic_json make_array(std::initializer_list<basic_json> init, const Allocator& alloc = Allocator())
+    {
+        return array(std::move(init),alloc);
+    }
+
+    static basic_json make_array(std::size_t n, const Allocator& alloc = Allocator())
+    {
+        return array(n,alloc);
+    }
+
+    template <class T>
+    static basic_json make_array(std::size_t n, const T& val, const Allocator& alloc = Allocator())
+    {
+        return basic_json::array(n, val,alloc);
+    }
+
+    template <std::size_t dim>
+    static typename std::enable_if<dim==1,basic_json>::type make_array(std::size_t n)
+    {
+        return array(n);
+    }
+
+    template <std::size_t dim, class T>
+    static typename std::enable_if<dim==1,basic_json>::type make_array(std::size_t n, const T& val, const Allocator& alloc = Allocator())
+    {
+        return array(n,val,alloc);
+    }
+
+    template <std::size_t dim, typename... Args>
+    static typename std::enable_if<(dim>1),basic_json>::type make_array(std::size_t n, Args... args)
+    {
+        const size_t dim1 = dim - 1;
+
+        basic_json val = make_array<dim1>(std::forward<Args>(args)...);
+        val.resize(n);
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            val[i] = make_array<dim1>(std::forward<Args>(args)...);
+        }
+        return val;
+    }
+
+    static const basic_json& null()
+    {
+        static const basic_json a_null = basic_json(null_type(), semantic_tag::none);
+        return a_null;
+    }
+
+    basic_json() 
+    {
+        construct<empty_object_storage>(semantic_tag::none);
+    }
+
+    basic_json(semantic_tag tag) 
+    {
+        construct<empty_object_storage>(tag);
+    }
+
+#if !defined(JSONCONS_NO_DEPRECATED)
+
+    JSONCONS_DEPRECATED_MSG("Instead, use basic_json(json_object_t,semantic_tag,const Allocator&)")
+    explicit basic_json(const Allocator& alloc, semantic_tag tag = semantic_tag::none) 
+    {
+        construct<object_storage>(object(alloc), tag);
+    }
+
+#endif
+
+    basic_json(const basic_json& other)
+    {
+        Init_(other);
+    }
+
+    basic_json(const basic_json& other, const Allocator& alloc)
+    {
+        Init_(other,alloc);
+    }
+
+    basic_json(basic_json&& other) noexcept
+    {
+        Init_rv_(std::forward<basic_json>(other));
+    }
+
+    basic_json(basic_json&& other, const Allocator&) noexcept
+    {
+        Init_rv_(std::forward<basic_json>(other));
+    }
+
+    explicit basic_json(json_object_arg_t, 
+                        semantic_tag tag = semantic_tag::none,
+                        const Allocator& alloc = Allocator()) 
+    {
+        construct<object_storage>(object(alloc), tag);
+    }
+
+    template<class InputIt>
+    basic_json(json_object_arg_t, 
+               InputIt first, InputIt last, 
+               semantic_tag tag = semantic_tag::none,
+               const Allocator& alloc = Allocator()) 
+    {
+        construct<object_storage>(object(first,last,alloc), tag);
+    }
+
+    basic_json(json_object_arg_t, 
+               std::initializer_list<std::pair<std::basic_string<char_type>,basic_json>> init, 
+               semantic_tag tag = semantic_tag::none, 
+               const Allocator& alloc = Allocator()) 
+    {
+        construct<object_storage>(object(init,alloc), tag);
+    }
+
+    explicit basic_json(json_array_arg_t, 
+                        semantic_tag tag = semantic_tag::none, 
+                        const Allocator& alloc = Allocator()) 
+    {
+        construct<array_storage>(array(alloc), tag);
+    }
+
+    template<class InputIt>
+    basic_json(json_array_arg_t, 
+               InputIt first, InputIt last, 
+               semantic_tag tag = semantic_tag::none, 
+               const Allocator& alloc = Allocator()) 
+    {
+        construct<array_storage>(array(first,last,alloc), tag);
+    }
+
+    basic_json(json_array_arg_t, 
+               std::initializer_list<basic_json> init, 
+               semantic_tag tag = semantic_tag::none, 
+               const Allocator& alloc = Allocator()) 
+    {
+        construct<array_storage>(array(init,alloc), tag);
+    }
+
+    basic_json(const array& val, semantic_tag tag = semantic_tag::none)
+    {
+        construct<array_storage>(val, tag);
+    }
+
+    basic_json(array&& val, semantic_tag tag = semantic_tag::none)
+    {
+        construct<array_storage>(std::forward<array>(val), tag);
+    }
+
+    basic_json(const object& val, semantic_tag tag = semantic_tag::none)
+    {
+        construct<object_storage>(val, tag);
+    }
+
+    basic_json(object&& val, semantic_tag tag = semantic_tag::none)
+    {
+        construct<object_storage>(std::forward<object>(val), tag);
+    }
+
+    template <class T,
+              class = typename std::enable_if<!is_proxy<T>::value && !is_basic_json<T>::value>::type>
+    basic_json(const T& val)
+        : basic_json(json_type_traits<basic_json,T>::to_json(val))
+    {
+    }
+
+    template <class T,
+              class = typename std::enable_if<!is_proxy<T>::value && !is_basic_json<T>::value>::type>
+    basic_json(const T& val, const Allocator& alloc)
+        : basic_json(json_type_traits<basic_json,T>::to_json(val,alloc))
+    {
+    }
+
+    basic_json(const char_type* s, semantic_tag tag = semantic_tag::none)
+        : basic_json(s, char_traits_type::length(s), tag)
+    {
+    }
+
+    basic_json(const char_type* s, const Allocator& alloc)
+        : basic_json(s, char_traits_type::length(s), semantic_tag::none, alloc)
+    {
+    }
+
+    basic_json(const char_type* s, std::size_t length, semantic_tag tag = semantic_tag::none)
+    {
+        if (length <= short_string_storage::max_length)
+        {
+            construct<short_string_storage>(tag, s, static_cast<uint8_t>(length));
+        }
+        else
+        {
+            construct<long_string_storage>(tag, s, length, char_allocator_type());
+        }
+    }
+
+    basic_json(const char_type* s, std::size_t length, semantic_tag tag, const Allocator& alloc)
+    {
+        if (length <= short_string_storage::max_length)
+        {
+            construct<short_string_storage>(tag, s, static_cast<uint8_t>(length));
+        }
+        else
+        {
+            construct<long_string_storage>(tag, s, length, alloc);
+        }
+    }
+
+    basic_json(half_arg_t, uint16_t val, semantic_tag tag = semantic_tag::none)
+    {
+        construct<half_storage>(val, tag);
+    }
+
+    basic_json(double val, semantic_tag tag)
+    {
+        construct<double_storage>(val, tag);
+    }
+
+    template <class Unsigned>
+    basic_json(Unsigned val, semantic_tag tag, 
+               typename std::enable_if<std::is_integral<Unsigned>::value && !std::is_signed<Unsigned>::value, int>::type = 0)
+    {
+        construct<uint64_storage>(val, tag);
+    }
+
+    template <class Signed>
+    basic_json(Signed val, semantic_tag tag,
+               typename std::enable_if<std::is_integral<Signed>::value && std::is_signed<Signed>::value,int>::type = 0)
+    {
+        construct<int64_storage>(val, tag);
+    }
+
+    basic_json(const string_view_type& sv, semantic_tag tag)
+        : basic_json(sv.data(), sv.length(), tag)
+    {
+    }
+
+    basic_json(null_type, semantic_tag tag)
+    {
+        construct<null_storage>(tag);
+    }
+
+    basic_json(bool val, semantic_tag tag)
+    {
+        construct<bool_storage>(val,tag);
+    }
+
+    basic_json(const string_view_type& sv, semantic_tag tag, const Allocator& alloc)
+        : basic_json(sv.data(), sv.length(), tag, alloc)
+    {
+    }
+
+    template <class Source>
+    basic_json(byte_string_arg_t, const Source& source, 
+               semantic_tag tag = semantic_tag::none,
+               const Allocator& alloc = Allocator(),
+               typename std::enable_if<jsoncons::detail::is_byte_sequence<Source>::value,int>::type = 0)
+    {
+        auto bytes = span<const uint8_t>(reinterpret_cast<const uint8_t*>(source.data()), source.size());
+        construct<byte_string_storage>(tag, bytes.data(), bytes.size(), 0, alloc);
+    }
+
+    template <class Source>
+    basic_json(byte_string_arg_t, const Source& source, 
+               uint64_t ext_tag,
+               const Allocator& alloc = Allocator(),
+               typename std::enable_if<jsoncons::detail::is_byte_sequence<Source>::value,int>::type = 0)
+    {
+        auto bytes = span<const uint8_t>(reinterpret_cast<const uint8_t*>(source.data()), source.size());
+        construct<byte_string_storage>(semantic_tag::ext, bytes.data(), bytes.size(), ext_tag, alloc);
+    }
+
+    ~basic_json() noexcept
+    {
+         Destroy_();
+    }
+
+    template <class T>
+    basic_json& operator=(const T& val)
+    {
+        *this = json_type_traits<basic_json,T>::to_json(val);
+        return *this;
+    }
+
+    basic_json& operator=(const char_type* s)
+    {
+        *this = basic_json(s, char_traits_type::length(s), semantic_tag::none);
+        return *this;
+    }
+
+    basic_json& operator[](std::size_t i)
+    {
+        return at(i);
+    }
+
+    const basic_json& operator[](std::size_t i) const
+    {
+        return at(i);
+    }
+
+    proxy_type operator[](const string_view_type& name)
+    {
+        switch (storage())
+        {
+        case storage_kind::empty_object_value: 
+            create_object_implicitly();
+            JSONCONS_FALLTHROUGH;
+        case storage_kind::object_value:
+            return proxy_type(*this, name);
+            break;
+        default:
+            JSONCONS_THROW(not_an_object(name.data(),name.length()));
+            break;
+        }
+    }
+
+    const basic_json& operator[](const string_view_type& name) const
+    {
+        return at(name);
+    }
+
+    template <class SAllocator=std::allocator<char_type>>
+    void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s, 
+              indenting line_indent = indenting::no_indent) const
+    {
+        std::error_code ec;
+
+        dump(s, line_indent, ec);
+        if (ec)
+        {
+            JSONCONS_THROW(ser_error(ec));
+        }
+    }
+
+    template <class SAllocator=std::allocator<char_type>>
+    void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s,
+              const basic_json_encode_options<char_type>& options, 
+              indenting line_indent = indenting::no_indent) const
+    {
+        std::error_code ec;
+
+        dump(s, options, line_indent, ec);
+        if (ec)
+        {
+            JSONCONS_THROW(ser_error(ec));
+        }
+    }
+
+    void dump(std::basic_ostream<char_type>& os, 
+              indenting line_indent = indenting::no_indent) const
+    {
+        std::error_code ec;
+
+        dump(os, line_indent, ec);
+        if (ec)
+        {
+            JSONCONS_THROW(ser_error(ec));
+        }
+    }
+
+    void dump(std::basic_ostream<char_type>& os, 
+              const basic_json_encode_options<char_type>& options, 
+              indenting line_indent = indenting::no_indent) const
+    {
+        std::error_code ec;
+
+        dump(os, options, line_indent, ec);
+        if (ec)
+        {
+            JSONCONS_THROW(ser_error(ec));
+        }
+    }
+
+    void dump(basic_json_visitor<char_type>& visitor) const
+    {
+        std::error_code ec;
+        dump(visitor, ec);
+        if (ec)
+        {
+            JSONCONS_THROW(ser_error(ec));
+        }
+    }
+
+    template <class SAllocator=std::allocator<char_type>>
+    void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s,
+              const basic_json_encode_options<char_type>& options, 
+              indenting line_indent,
+              std::error_code& ec) const
+    {
+        using string_type = std::basic_string<char_type,char_traits_type,SAllocator>;
+        if (line_indent == indenting::indent)
+        {
+            basic_json_encoder<char_type,jsoncons::string_sink<string_type>> encoder(s, options);
+            dump(encoder, ec);
+        }
+        else
+        {
+            basic_compact_json_encoder<char_type,jsoncons::string_sink<string_type>> encoder(s, options);
+            dump(encoder, ec);
+        }
+    }
+
+    template <class SAllocator=std::allocator<char_type>>
+    void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s, 
+              indenting line_indent,
+              std::error_code& ec) const
+    {
+        using string_type = std::basic_string<char_type,char_traits_type,SAllocator>;
+        if (line_indent == indenting::indent)
+        {
+            basic_json_encoder<char_type,jsoncons::string_sink<string_type>> encoder(s);
+            dump(encoder, ec);
+        }
+        else
+        {
+            basic_compact_json_encoder<char_type,jsoncons::string_sink<string_type>> encoder(s);
+            dump(encoder, ec);
+        }
+    }
+
+    void dump(std::basic_ostream<char_type>& os, 
+              const basic_json_encode_options<char_type>& options, 
+              indenting line_indent,
+              std::error_code& ec) const
+    {
+        if (line_indent == indenting::indent)
+        {
+            basic_json_encoder<char_type> encoder(os, options);
+            dump(encoder, ec);
+        }
+        else
+        {
+            basic_compact_json_encoder<char_type> encoder(os, options);
+            dump(encoder, ec);
+        }
+    }
+
+    void dump(std::basic_ostream<char_type>& os, 
+              indenting line_indent,
+              std::error_code& ec) const
+    {
+        if (line_indent == indenting::indent)
+        {
+            basic_json_encoder<char_type> encoder(os);
+            dump(encoder, ec);
+        }
+        else
+        {
+            basic_compact_json_encoder<char_type> encoder(os);
+            dump(encoder, ec);
+        }
+    }
+
+    void dump(basic_json_visitor<char_type>& visitor, 
+              std::error_code& ec) const
+    {
+        dump_noflush(visitor, ec);
+        if (ec)
+        {
+            return;
+        }
+        visitor.flush();
+    }
+
+    bool is_null() const noexcept
+    {
+        return storage() == storage_kind::null_value;
+    }
+
+    allocator_type get_allocator() const
+    {
+        switch (storage())
+        {
+            case storage_kind::long_string_value:
+            {
+                return cast<long_string_storage>().get_allocator();
+            }
+            case storage_kind::byte_string_value:
+            {
+                return cast<byte_string_storage>().get_allocator();
+            }
+            case storage_kind::array_value:
+            {
+                return cast<array_storage>().get_allocator();
+            }
+            case storage_kind::object_value:
+            {
+                return cast<object_storage>().get_allocator();
+            }
+            default:
+                return allocator_type();
+        }
+    }
+
+    uint64_t ext_tag() const
+    {
+        switch (storage())
+        {
+            case storage_kind::byte_string_value:
+            {
+                return cast<byte_string_storage>().ext_tag();
+            }
+            default:
+                return 0;
+        }
+    }
+
+    bool contains(const string_view_type& key) const noexcept
+    {
+        switch (storage())
+        {
+        case storage_kind::object_value:
+            {
+                auto it = object_value().find(key);
+                return it != object_value().end();
+            }
+            break;
+        default:
+            return false;
+        }
+    }
+
+    std::size_t count(const string_view_type& name) const
+    {
+        switch (storage())
+        {
+        case storage_kind::object_value:
             {
                 auto it = object_value().find(name);
-                if (it == object_range().end())
+                if (it == object_value().end())
+                {
+                    return 0;
+                }
+                std::size_t count = 0;
+                while (it != object_value().end()&& it->key() == name)
+                {
+                    ++count;
+                    ++it;
+                }
+                return count;
+            }
+            break;
+        default:
+            return 0;
+        }
+    }
+
+    template<class T, class... Args>
+    bool is(Args&&... args) const noexcept
+    {
+        return json_type_traits<basic_json,T>::is(*this,std::forward<Args>(args)...);
+    }
+
+    bool is_string() const noexcept
+    {
+        return (storage() == storage_kind::long_string_value) || (storage() == storage_kind::short_string_value);
+    }
+
+    bool is_string_view() const noexcept
+    {
+        return is_string();
+    }
+
+    bool is_byte_string() const noexcept
+    {
+        return storage() == storage_kind::byte_string_value;
+    }
+
+    bool is_byte_string_view() const noexcept
+    {
+        return is_byte_string();
+    }
+
+    bool is_bignum() const
+    {
+        switch (storage())
+        {
+            case storage_kind::short_string_value:
+            case storage_kind::long_string_value:
+                return jsoncons::detail::is_base10(as_string_view().data(), as_string_view().length());
+            case storage_kind::int64_value:
+            case storage_kind::uint64_value:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    bool is_bool() const noexcept
+    {
+        return storage() == storage_kind::bool_value;
+    }
+
+    bool is_object() const noexcept
+    {
+        return storage() == storage_kind::object_value || storage() == storage_kind::empty_object_value;
+    }
+
+    bool is_array() const noexcept
+    {
+        return storage() == storage_kind::array_value;
+    }
+
+    bool is_int64() const noexcept
+    {
+        return storage() == storage_kind::int64_value || (storage() == storage_kind::uint64_value&& (as_integer<uint64_t>() <= static_cast<uint64_t>((std::numeric_limits<int64_t>::max)())));
+    }
+
+    bool is_uint64() const noexcept
+    {
+        return storage() == storage_kind::uint64_value || (storage() == storage_kind::int64_value&& as_integer<int64_t>() >= 0);
+    }
+
+    bool is_half() const noexcept
+    {
+        return storage() == storage_kind::half_value;
+    }
+
+    bool is_double() const noexcept
+    {
+        return storage() == storage_kind::double_value;
+    }
+
+    bool is_number() const noexcept
+    {
+        switch (storage())
+        {
+            case storage_kind::int64_value:
+            case storage_kind::uint64_value:
+            case storage_kind::half_value:
+            case storage_kind::double_value:
+                return true;
+            case storage_kind::short_string_value:
+            case storage_kind::long_string_value:
+                return tag() == semantic_tag::bigint ||
+                       tag() == semantic_tag::bigdec ||
+                       tag() == semantic_tag::bigfloat;
+            default:
+                return false;
+        }
+    }
+
+    bool empty() const noexcept
+    {
+        switch (storage())
+        {
+            case storage_kind::byte_string_value:
+                return cast<byte_string_storage>().length() == 0;
+                break;
+            case storage_kind::short_string_value:
+                return cast<short_string_storage>().length() == 0;
+            case storage_kind::long_string_value:
+                return cast<long_string_storage>().length() == 0;
+            case storage_kind::array_value:
+                return array_value().size() == 0;
+            case storage_kind::empty_object_value:
+                return true;
+            case storage_kind::object_value:
+                return object_value().size() == 0;
+            default:
+                return false;
+        }
+    }
+
+    std::size_t capacity() const
+    {
+        switch (storage())
+        {
+        case storage_kind::array_value:
+            return array_value().capacity();
+        case storage_kind::object_value:
+            return object_value().capacity();
+        default:
+            return 0;
+        }
+    }
+
+    template<class U=Allocator>
+    void create_object_implicitly()
+    {
+        create_object_implicitly(jsoncons::detail::is_stateless<U>());
+    }
+
+    void create_object_implicitly(std::false_type)
+    {
+        static_assert(std::true_type::value, "Cannot create object implicitly - alloc is stateful.");
+    }
+
+    void create_object_implicitly(std::true_type)
+    {
+        *this = basic_json(object(Allocator()), tag());
+    }
+
+    void reserve(std::size_t n)
+    {
+        if (n > 0)
+        {
+            switch (storage())
+            {
+            case storage_kind::array_value:
+                array_value().reserve(n);
+                break;
+            case storage_kind::empty_object_value:
+            {
+                create_object_implicitly();
+                object_value().reserve(n);
+            }
+            break;
+            case storage_kind::object_value:
+            {
+                object_value().reserve(n);
+            }
+                break;
+            default:
+                break;
+            }
+        }
+    }
+
+    void resize(std::size_t n)
+    {
+        switch (storage())
+        {
+        case storage_kind::array_value:
+            array_value().resize(n);
+            break;
+        default:
+            break;
+        }
+    }
+
+    template <class T>
+    void resize(std::size_t n, T val)
+    {
+        switch (storage())
+        {
+        case storage_kind::array_value:
+            array_value().resize(n, val);
+            break;
+        default:
+            break;
+        }
+    }
+
+    template<class T>
+    typename std::enable_if<is_json_type_traits_specialized<basic_json,T>::value,T>::type
+    as() const
+    {
+        T val = json_type_traits<basic_json,T>::as(*this);
+        return val;
+    }
+
+    template<class T>
+    typename std::enable_if<(!jsoncons::detail::is_basic_string<T>::value && 
+                             jsoncons::detail::is_back_insertable_byte_container<T>::value) ||
+                            is_basic_byte_string<T>::value,T>::type
+    as(byte_string_arg_t, semantic_tag hint) const
+    {
+        converter<T> convert;
+        std::error_code ec;
+        switch (storage())
+        {
+            case storage_kind::short_string_value:
+            case storage_kind::long_string_value:
+            {
+                switch (tag())
+                {
+                    case semantic_tag::base16:
+                    case semantic_tag::base64:
+                    case semantic_tag::base64url:
+                    {
+                        T v = convert.from(as_string_view(),tag(),ec);
+                        if (ec)
+                        {
+                            JSONCONS_THROW(ser_error(ec));
+                        }
+                        return v;
+                    }
+                    default:
+                    {
+                        T v = convert.from(as_string_view(), hint, ec);
+                        if (ec)
+                        {
+                            JSONCONS_THROW(ser_error(ec));
+                        }
+                        return T(v.begin(),v.end());
+                    }
+                    break;
+                }
+                break;
+            }
+            case storage_kind::byte_string_value:
+                return T(as_byte_string_view().begin(), as_byte_string_view().end());
+            default:
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Not a byte string"));
+        }
+    }
+
+    bool as_bool() const 
+    {
+        switch (storage())
+        {
+            case storage_kind::bool_value:
+                return cast<bool_storage>().value();
+            case storage_kind::int64_value:
+                return cast<int64_storage>().value() != 0;
+            case storage_kind::uint64_value:
+                return cast<uint64_storage>().value() != 0;
+            default:
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Not a bool"));
+        }
+    }
+
+    template <class T
+#if !defined(JSONCONS_NO_DEPRECATED)
+         = int64_t
+#endif
+    >
+    T as_integer() const
+    {
+        switch (storage())
+        {
+            case storage_kind::short_string_value:
+            case storage_kind::long_string_value:
+            {
+                auto result = jsoncons::detail::to_integer<T>(as_string_view().data(), as_string_view().length());
+                if (!result)
+                {
+                    JSONCONS_THROW(json_runtime_error<std::runtime_error>(result.error_code().message()));
+                }
+                return result.value();
+            }
+            case storage_kind::half_value:
+                return static_cast<T>(cast<half_storage>().value());
+            case storage_kind::double_value:
+                return static_cast<T>(cast<double_storage>().value());
+            case storage_kind::int64_value:
+                return static_cast<T>(cast<int64_storage>().value());
+            case storage_kind::uint64_value:
+                return static_cast<T>(cast<uint64_storage>().value());
+            case storage_kind::bool_value:
+                return static_cast<T>(cast<bool_storage>().value() ? 1 : 0);
+            default:
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Not an integer"));
+        }
+    }
+
+    double as_double() const
+    {
+        switch (storage())
+        {
+            case storage_kind::short_string_value:
+            case storage_kind::long_string_value:
+            {
+                jsoncons::detail::to_double_t to_double;
+                // to_double() throws std::invalid_argument if conversion fails
+                return to_double(as_cstring(), as_string_view().length());
+            }
+            case storage_kind::half_value:
+                return jsoncons::detail::decode_half(cast<half_storage>().value());
+            case storage_kind::double_value:
+                return cast<double_storage>().value();
+            case storage_kind::int64_value:
+                return static_cast<double>(cast<int64_storage>().value());
+            case storage_kind::uint64_value:
+                return static_cast<double>(cast<uint64_storage>().value());
+            default:
+                JSONCONS_THROW(json_runtime_error<std::invalid_argument>("Not a double"));
+        }
+    }
+
+    template <class SAllocator=std::allocator<char_type>>
+    std::basic_string<char_type,char_traits_type,SAllocator> as_string() const 
+    {
+        return as_string(SAllocator());
+    }
+
+    template <class SAllocator=std::allocator<char_type>>
+    std::basic_string<char_type,char_traits_type,SAllocator> as_string(const SAllocator& alloc) const 
+    {
+        using string_type = std::basic_string<char_type,char_traits_type,SAllocator>;
+
+        converter<string_type> convert;
+        std::error_code ec;
+        switch (storage())
+        {
+            case storage_kind::short_string_value:
+            case storage_kind::long_string_value:
+            {
+                return string_type(as_string_view().data(),as_string_view().length(),alloc);
+            }
+            case storage_kind::byte_string_value:
+            {
+                auto s = convert.from(as_byte_string_view(), tag(), alloc, ec);
+                if (ec)
+                {
+                    JSONCONS_THROW(ser_error(ec));
+                }
+                return s;
+            }
+            case storage_kind::array_value:
+            {
+                string_type s(alloc);
+                {
+                    basic_compact_json_encoder<char_type,jsoncons::string_sink<string_type>> encoder(s);
+                    dump(encoder);
+                }
+                return s;
+            }
+            default:
+            {
+                string_type s(alloc);
+                basic_compact_json_encoder<char_type,jsoncons::string_sink<string_type>> encoder(s);
+                dump(encoder);
+                return s;
+            }
+        }
+    }
+
+    const char_type* as_cstring() const
+    {
+        switch (storage())
+        {
+        case storage_kind::short_string_value:
+            return cast<short_string_storage>().c_str();
+        case storage_kind::long_string_value:
+            return cast<long_string_storage>().c_str();
+        default:
+            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not a cstring"));
+        }
+    }
+
+    basic_json& at(const string_view_type& name)
+    {
+        switch (storage())
+        {
+        case storage_kind::empty_object_value:
+            JSONCONS_THROW(key_not_found(name.data(),name.length()));
+        case storage_kind::object_value:
+            {
+                auto it = object_value().find(name);
+                if (it == object_value().end())
                 {
                     JSONCONS_THROW(key_not_found(name.data(),name.length()));
                 }
@@ -3827,48 +3824,71 @@ public:
         }
     }
 
-    basic_json& at(size_t i)
+    const basic_json& at(const string_view_type& name) const
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::array_val:
-            if (i >= array_value().size())
+        case storage_kind::empty_object_value:
+            JSONCONS_THROW(key_not_found(name.data(),name.length()));
+        case storage_kind::object_value:
             {
-                JSONCONS_THROW(json_runtime_error<std::out_of_range>("Invalid array subscript"));
+                auto it = object_value().find(name);
+                if (it == object_value().end())
+                {
+                    JSONCONS_THROW(key_not_found(name.data(),name.length()));
+                }
+                return it->value();
             }
-            return array_value().operator[](i);
-        case storage_type::object_val:
-            return object_value().at(i);
+            break;
         default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Index on non-array value not supported"));
+            {
+                JSONCONS_THROW(not_an_object(name.data(),name.length()));
+            }
         }
     }
 
-    const basic_json& at(size_t i) const
+    basic_json& at(std::size_t i)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::array_val:
+        case storage_kind::array_value:
             if (i >= array_value().size())
             {
                 JSONCONS_THROW(json_runtime_error<std::out_of_range>("Invalid array subscript"));
             }
             return array_value().operator[](i);
-        case storage_type::object_val:
+        case storage_kind::object_value:
             return object_value().at(i);
         default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Index on non-array value not supported"));
+            JSONCONS_THROW(json_runtime_error<std::domain_error>("Index on non-array value not supported"));
+        }
+    }
+
+    const basic_json& at(std::size_t i) const
+    {
+        switch (storage())
+        {
+        case storage_kind::array_value:
+            if (i >= array_value().size())
+            {
+                JSONCONS_THROW(json_runtime_error<std::out_of_range>("Invalid array subscript"));
+            }
+            return array_value().operator[](i);
+        case storage_kind::object_value:
+            return object_value().at(i);
+        default:
+            JSONCONS_THROW(json_runtime_error<std::domain_error>("Index on non-array value not supported"));
         }
     }
 
     object_iterator find(const string_view_type& name)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
+        case storage_kind::empty_object_value:
             return object_range().end();
-        case storage_type::object_val:
-            return object_value().find(name);
+        case storage_kind::object_value:
+            return object_iterator(object_value().find(name));
         default:
             {
                 JSONCONS_THROW(not_an_object(name.data(),name.length()));
@@ -3878,12 +3898,12 @@ public:
 
     const_object_iterator find(const string_view_type& name) const
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
+        case storage_kind::empty_object_value:
             return object_range().end();
-        case storage_type::object_val:
-            return object_value().find(name);
+        case storage_kind::object_value:
+            return const_object_iterator(object_value().find(name));
         default:
             {
                 JSONCONS_THROW(not_an_object(name.data(),name.length()));
@@ -3891,19 +3911,19 @@ public:
         }
     }
 
-    const basic_json& get_with_default(const string_view_type& name) const
+    const basic_json& at_or_null(const string_view_type& name) const
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::null_val:
-        case storage_type::empty_object_val:
+        case storage_kind::null_value:
+        case storage_kind::empty_object_value:
             {
                 return null();
             }
-        case storage_type::object_val:
+        case storage_kind::object_value:
             {
-                const_object_iterator it = object_value().find(name);
-                if (it != object_range().end())
+                auto it = object_value().find(name);
+                if (it != object_value().end())
                 {
                     return it->value();
                 }
@@ -3919,55 +3939,30 @@ public:
         }
     }
 
-    template<class T>
-    T get_with_default(const string_view_type& name, const T& default_val) const
+    template <class T,class U>
+    T get_value_or(const string_view_type& name, U&& default_value) const
     {
-        switch (var_.type())
+        static_assert(std::is_copy_constructible<T>::value,
+                      "get_value_or: T must be copy constructible");
+        static_assert(std::is_convertible<U&&, T>::value,
+                      "get_value_or: U must be convertible to T");
+        switch (storage())
         {
-        case storage_type::null_val:
-        case storage_type::empty_object_val:
+        case storage_kind::null_value:
+        case storage_kind::empty_object_value:
             {
-                return default_val;
+                return static_cast<T>(std::forward<U>(default_value));
             }
-        case storage_type::object_val:
+        case storage_kind::object_value:
             {
-                const_object_iterator it = object_value().find(name);
-                if (it != object_range().end())
+                auto it = object_value().find(name);
+                if (it != object_value().end())
                 {
                     return it->value().template as<T>();
                 }
                 else
                 {
-                    return default_val;
-                }
-            }
-        default:
-            {
-                JSONCONS_THROW(not_an_object(name.data(),name.length()));
-            }
-        }
-    }
-
-    template<class T = std::basic_string<char_type>>
-    T get_with_default(const string_view_type& name, const char_type* default_val) const
-    {
-        switch (var_.type())
-        {
-        case storage_type::null_val:
-        case storage_type::empty_object_val:
-            {
-                return T(default_val);
-            }
-        case storage_type::object_val:
-            {
-                const_object_iterator it = object_value().find(name);
-                if (it != object_range().end())
-                {
-                    return it->value().template as<T>();
-                }
-                else
-                {
-                    return T(default_val);
+                    return static_cast<T>(std::forward<U>(default_value));
                 }
             }
         default:
@@ -3981,12 +3976,12 @@ public:
 
     void shrink_to_fit()
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::array_val:
+        case storage_kind::array_value:
             array_value().shrink_to_fit();
             break;
-        case storage_type::object_val:
+        case storage_kind::object_value:
             object_value().shrink_to_fit();
             break;
         default:
@@ -3996,12 +3991,12 @@ public:
 
     void clear()
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::array_val:
+        case storage_kind::array_value:
             array_value().clear();
             break;
-        case storage_type::object_val:
+        case storage_kind::object_value:
             object_value().clear();
             break;
         default:
@@ -4011,56 +4006,56 @@ public:
 
     void erase(const_object_iterator pos)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
+        case storage_kind::empty_object_value:
             break;
-        case storage_type::object_val:
+        case storage_kind::object_value:
             object_value().erase(pos);
             break;
         default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not an object"));
+            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not an object"));
             break;
         }
     }
 
     void erase(const_object_iterator first, const_object_iterator last)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
+        case storage_kind::empty_object_value:
             break;
-        case storage_type::object_val:
+        case storage_kind::object_value:
             object_value().erase(first, last);
             break;
         default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not an object"));
+            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not an object"));
             break;
         }
     }
 
     void erase(const_array_iterator pos)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::array_val:
+        case storage_kind::array_value:
             array_value().erase(pos);
             break;
         default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not an array"));
+            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not an array"));
             break;
         }
     }
 
     void erase(const_array_iterator first, const_array_iterator last)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::array_val:
+        case storage_kind::array_value:
             array_value().erase(first, last);
             break;
         default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not an array"));
+            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not an array"));
             break;
         }
     }
@@ -4069,11 +4064,11 @@ public:
 
     void erase(const string_view_type& name)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
+        case storage_kind::empty_object_value:
             break;
-        case storage_type::object_val:
+        case storage_kind::object_value:
             object_value().erase(name);
             break;
         default:
@@ -4085,13 +4080,16 @@ public:
     template <class T>
     std::pair<object_iterator,bool> insert_or_assign(const string_view_type& name, T&& val)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
+        case storage_kind::empty_object_value:
             create_object_implicitly();
             JSONCONS_FALLTHROUGH;
-        case storage_type::object_val:
-            return object_value().insert_or_assign(name, std::forward<T>(val));
+        case storage_kind::object_value:
+        {
+            auto result = object_value().insert_or_assign(name, std::forward<T>(val));
+            return std::make_pair(object_iterator(result.first), result.second);
+        }
         default:
             {
                 JSONCONS_THROW(not_an_object(name.data(),name.length()));
@@ -4102,13 +4100,16 @@ public:
     template <class ... Args>
     std::pair<object_iterator,bool> try_emplace(const string_view_type& name, Args&&... args)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
+        case storage_kind::empty_object_value:
             create_object_implicitly();
             JSONCONS_FALLTHROUGH;
-        case storage_type::object_val:
-            return object_value().try_emplace(name, std::forward<Args>(args)...);
+        case storage_kind::object_value:
+        {
+            auto result = object_value().try_emplace(name, std::forward<Args>(args)...);
+            return std::make_pair(object_iterator(result.first),result.second);
+        }
         default:
             {
                 JSONCONS_THROW(not_an_object(name.data(),name.length()));
@@ -4120,64 +4121,68 @@ public:
 
     void merge(const basic_json& source)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
+        case storage_kind::empty_object_value:
             create_object_implicitly();
             JSONCONS_FALLTHROUGH;
-        case storage_type::object_val:
-            return object_value().merge(source.object_value());
+        case storage_kind::object_value:
+            object_value().merge(source.object_value());
+            break;
         default:
             {
-                JSONCONS_THROW(json_runtime_error<std::runtime_error>("Attempting to merge a value that is not an object"));
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Attempting to merge a value that is not an object"));
             }
         }
     }
 
     void merge(basic_json&& source)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
+        case storage_kind::empty_object_value:
             create_object_implicitly();
             JSONCONS_FALLTHROUGH;
-        case storage_type::object_val:
-            return object_value().merge(std::move(source.object_value()));
+        case storage_kind::object_value:
+            object_value().merge(std::move(source.object_value()));
+            break;
         default:
             {
-                JSONCONS_THROW(json_runtime_error<std::runtime_error>("Attempting to merge a value that is not an object"));
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Attempting to merge a value that is not an object"));
             }
         }
     }
 
     void merge(object_iterator hint, const basic_json& source)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
+        case storage_kind::empty_object_value:
             create_object_implicitly();
             JSONCONS_FALLTHROUGH;
-        case storage_type::object_val:
-            return object_value().merge(hint, source.object_value());
+        case storage_kind::object_value:
+            object_value().merge(hint, source.object_value());
+            break;
         default:
             {
-                JSONCONS_THROW(json_runtime_error<std::runtime_error>("Attempting to merge a value that is not an object"));
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Attempting to merge a value that is not an object"));
             }
         }
     }
 
     void merge(object_iterator hint, basic_json&& source)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
+        case storage_kind::empty_object_value:
             create_object_implicitly();
             JSONCONS_FALLTHROUGH;
-        case storage_type::object_val:
-            return object_value().merge(hint, std::move(source.object_value()));
+        case storage_kind::object_value:
+            object_value().merge(hint, std::move(source.object_value()));
+            break;
         default:
             {
-                JSONCONS_THROW(json_runtime_error<std::runtime_error>("Attempting to merge a value that is not an object"));
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Attempting to merge a value that is not an object"));
             }
         }
     }
@@ -4186,64 +4191,68 @@ public:
 
     void merge_or_update(const basic_json& source)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
+        case storage_kind::empty_object_value:
             create_object_implicitly();
             JSONCONS_FALLTHROUGH;
-        case storage_type::object_val:
-            return object_value().merge_or_update(source.object_value());
+        case storage_kind::object_value:
+            object_value().merge_or_update(source.object_value());
+            break;
         default:
             {
-                JSONCONS_THROW(json_runtime_error<std::runtime_error>("Attempting to merge or update a value that is not an object"));
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Attempting to merge or update a value that is not an object"));
             }
         }
     }
 
     void merge_or_update(basic_json&& source)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
+        case storage_kind::empty_object_value:
             create_object_implicitly();
             JSONCONS_FALLTHROUGH;
-        case storage_type::object_val:
-            return object_value().merge_or_update(std::move(source.object_value()));
+        case storage_kind::object_value:
+            object_value().merge_or_update(std::move(source.object_value()));
+            break;
         default:
             {
-                JSONCONS_THROW(json_runtime_error<std::runtime_error>("Attempting to merge or update a value that is not an object"));
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Attempting to merge or update a value that is not an object"));
             }
         }
     }
 
     void merge_or_update(object_iterator hint, const basic_json& source)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
+        case storage_kind::empty_object_value:
             create_object_implicitly();
             JSONCONS_FALLTHROUGH;
-        case storage_type::object_val:
-            return object_value().merge_or_update(hint, source.object_value());
+        case storage_kind::object_value:
+            object_value().merge_or_update(hint, source.object_value());
+            break;
         default:
             {
-                JSONCONS_THROW(json_runtime_error<std::runtime_error>("Attempting to merge or update a value that is not an object"));
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Attempting to merge or update a value that is not an object"));
             }
         }
     }
 
     void merge_or_update(object_iterator hint, basic_json&& source)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
+        case storage_kind::empty_object_value:
             create_object_implicitly();
             JSONCONS_FALLTHROUGH;
-        case storage_type::object_val:
-            return object_value().merge_or_update(hint, std::move(source.object_value()));
+        case storage_kind::object_value:
+            object_value().merge_or_update(hint, std::move(source.object_value()));
+            break;
         default:
             {
-                JSONCONS_THROW(json_runtime_error<std::runtime_error>("Attempting to merge or update a value that is not an object"));
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Attempting to merge or update a value that is not an object"));
             }
         }
     }
@@ -4251,13 +4260,13 @@ public:
     template <class T>
     object_iterator insert_or_assign(object_iterator hint, const string_view_type& name, T&& val)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
+        case storage_kind::empty_object_value:
             create_object_implicitly();
             JSONCONS_FALLTHROUGH;
-        case storage_type::object_val:
-            return object_value().insert_or_assign(hint, name, std::forward<T>(val));
+        case storage_kind::object_value:
+            return object_iterator(object_value().insert_or_assign(hint, name, std::forward<T>(val)));
         default:
             {
                 JSONCONS_THROW(not_an_object(name.data(),name.length()));
@@ -4268,13 +4277,13 @@ public:
     template <class ... Args>
     object_iterator try_emplace(object_iterator hint, const string_view_type& name, Args&&... args)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
+        case storage_kind::empty_object_value:
             create_object_implicitly();
             JSONCONS_FALLTHROUGH;
-        case storage_type::object_val:
-            return object_value().try_emplace(hint, name, std::forward<Args>(args)...);
+        case storage_kind::object_value:
+            return object_iterator(object_value().try_emplace(hint, name, std::forward<Args>(args)...));
         default:
             {
                 JSONCONS_THROW(not_an_object(name.data(),name.length()));
@@ -4285,14 +4294,14 @@ public:
     template <class T>
     array_iterator insert(const_array_iterator pos, T&& val)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::array_val:
+        case storage_kind::array_value:
             return array_value().insert(pos, std::forward<T>(val));
             break;
         default:
             {
-                JSONCONS_THROW(json_runtime_error<std::runtime_error>("Attempting to insert into a value that is not an array"));
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Attempting to insert into a value that is not an array"));
             }
         }
     }
@@ -4300,14 +4309,14 @@ public:
     template <class InputIt>
     array_iterator insert(const_array_iterator pos, InputIt first, InputIt last)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::array_val:
+        case storage_kind::array_value:
             return array_value().insert(pos, first, last);
             break;
         default:
             {
-                JSONCONS_THROW(json_runtime_error<std::runtime_error>("Attempting to insert into a value that is not an array"));
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Attempting to insert into a value that is not an array"));
             }
         }
     }
@@ -4315,15 +4324,15 @@ public:
     template <class InputIt>
     void insert(InputIt first, InputIt last)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
-        case storage_type::object_val:
-            return object_value().insert(first, last, get_key_value<key_type,basic_json>());
+        case storage_kind::empty_object_value:
+        case storage_kind::object_value:
+            object_value().insert(first, last, get_key_value<key_type,basic_json>());
             break;
         default:
             {
-                JSONCONS_THROW(json_runtime_error<std::runtime_error>("Attempting to insert into a value that is not an object"));
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Attempting to insert into a value that is not an object"));
             }
         }
     }
@@ -4331,15 +4340,15 @@ public:
     template <class InputIt>
     void insert(sorted_unique_range_tag tag, InputIt first, InputIt last)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
-        case storage_type::object_val:
-            return object_value().insert(tag, first, last, get_key_value<key_type,basic_json>());
+        case storage_kind::empty_object_value:
+        case storage_kind::object_value:
+            object_value().insert(tag, first, last, get_key_value<key_type,basic_json>());
             break;
         default:
             {
-                JSONCONS_THROW(json_runtime_error<std::runtime_error>("Attempting to insert into a value that is not an object"));
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Attempting to insert into a value that is not an object"));
             }
         }
     }
@@ -4347,14 +4356,14 @@ public:
     template <class... Args> 
     array_iterator emplace(const_array_iterator pos, Args&&... args)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::array_val:
+        case storage_kind::array_value:
             return array_value().emplace(pos, std::forward<Args>(args)...);
             break;
         default:
             {
-                JSONCONS_THROW(json_runtime_error<std::runtime_error>("Attempting to insert into a value that is not an array"));
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Attempting to insert into a value that is not an array"));
             }
         }
     }
@@ -4362,33 +4371,50 @@ public:
     template <class... Args> 
     basic_json& emplace_back(Args&&... args)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::array_val:
+        case storage_kind::array_value:
             return array_value().emplace_back(std::forward<Args>(args)...);
         default:
             {
-                JSONCONS_THROW(json_runtime_error<std::runtime_error>("Attempting to insert into a value that is not an array"));
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Attempting to insert into a value that is not an array"));
             }
         }
     }
 
-    storage_type type() const
+    json_type type() const
     {
-        return var_.type();
+        switch(storage())
+        {
+            case storage_kind::null_value:
+                return json_type::null_value;
+            case storage_kind::bool_value:
+                return json_type::bool_value;
+            case storage_kind::int64_value:
+                return json_type::int64_value;
+            case storage_kind::uint64_value:
+                return json_type::uint64_value;
+            case storage_kind::half_value:
+                return json_type::half_value;
+            case storage_kind::double_value:
+                return json_type::double_value;
+            case storage_kind::short_string_value:
+            case storage_kind::long_string_value:
+                return json_type::string_value;
+            case storage_kind::byte_string_value:
+                return json_type::byte_string_value;
+            case storage_kind::array_value:
+                return json_type::array_value;
+            case storage_kind::empty_object_value:
+            case storage_kind::object_value:
+                return json_type::object_value;
+            default:
+                JSONCONS_UNREACHABLE();
+                break;
+        }
     }
 
-    semantic_tag tag() const
-    {
-        return var_.tag();
-    }
-
-    void swap(basic_json& b)
-    {
-        var_.swap(b.var_);
-    }
-
-    friend void swap(basic_json& a, basic_json& b)
+    friend void swap(basic_json& a, basic_json& b) noexcept
     {
         a.swap(b);
     }
@@ -4396,29 +4422,122 @@ public:
     template <class T>
     void push_back(T&& val)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::array_val:
+        case storage_kind::array_value:
             array_value().push_back(std::forward<T>(val));
             break;
         default:
             {
-                JSONCONS_THROW(json_runtime_error<std::runtime_error>("Attempting to insert into a value that is not an array"));
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Attempting to insert into a value that is not an array"));
             }
         }
     }
 
+    template<class T>
+    T get_with_default(const string_view_type& name, const T& default_value) const
+    {
+        switch (storage())
+        {
+        case storage_kind::null_value:
+        case storage_kind::empty_object_value:
+            {
+                return default_value;
+            }
+        case storage_kind::object_value:
+            {
+                auto it = object_value().find(name);
+                if (it != object_value().end())
+                {
+                    return it->value().template as<T>();
+                }
+                else
+                {
+                    return default_value;
+                }
+            }
+        default:
+            {
+                JSONCONS_THROW(not_an_object(name.data(),name.length()));
+            }
+        }
+    }
+
+    template<class T = std::basic_string<char_type>>
+    T get_with_default(const string_view_type& name, const char_type* default_value) const
+    {
+        switch (storage())
+        {
+        case storage_kind::null_value:
+        case storage_kind::empty_object_value:
+            {
+                return T(default_value);
+            }
+        case storage_kind::object_value:
+            {
+                auto it = object_value().find(name);
+                if (it != object_value().end())
+                {
+                    return it->value().template as<T>();
+                }
+                else
+                {
+                    return T(default_value);
+                }
+            }
+        default:
+            {
+                JSONCONS_THROW(not_an_object(name.data(),name.length()));
+            }
+        }
+    }
+
+    std::basic_string<char_type> to_string() const noexcept
+    {
+        using string_type = std::basic_string<char_type>;
+        string_type s;
+        basic_compact_json_encoder<char_type, jsoncons::string_sink<string_type>> encoder(s);
+        dump(encoder);
+        return s;
+    }
+
 #if !defined(JSONCONS_NO_DEPRECATED)
 
+    template <class SAllocator = std::allocator<char_type>>
+    JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, const basic_json_encode_options<char_type>&)")
+    std::basic_string<char_type, char_traits_type, SAllocator> to_string(const basic_json_encode_options<char_type>& options,
+        const SAllocator& alloc = SAllocator()) const
+    {
+        using string_type = std::basic_string<char_type, char_traits_type, SAllocator>;
+        string_type s(alloc);
+        basic_compact_json_encoder<char_type, jsoncons::string_sink<string_type>> encoder(s, options);
+        dump(encoder);
+        return s;
+    }
+
+    JSONCONS_DEPRECATED_MSG("Instead, use basic_json(byte_string_arg_t, const Source&, semantic_tag=semantic_tag::none,const Allocator& = Allocator())")
+    basic_json(const byte_string_view& bytes, 
+               semantic_tag tag, 
+               const Allocator& alloc = Allocator())
+        : basic_json(byte_string_arg, bytes, tag, alloc)
+    {
+    }
+
+    JSONCONS_DEPRECATED_MSG("Instead, use at_or_null(const string_view_type&)")
+    const basic_json& get_with_default(const string_view_type& name) const
+    {
+        return at_or_null(name);
+    }
+
     JSONCONS_DEPRECATED_MSG("Instead, use parse(const string_view_type&)")
-    static basic_json parse(const char_type* s, size_t length)
+    static basic_json parse(const char_type* s, std::size_t length)
     {
         parse_error_handler_type err_handler;
         return parse(s,length,err_handler);
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use parse(const string_view_type&, parse_error_handler)")
-    static basic_json parse(const char_type* s, size_t length, std::function<bool(json_errc,const ser_context&)> err_handler)
+    static basic_json parse(const char_type* s, std::size_t length, std::function<bool(json_errc,const ser_context&)> err_handler)
     {
         return parse(string_view_type(s,length),err_handler);
     }
@@ -4456,34 +4575,34 @@ public:
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use parse(parse(const string_view_type&, std::function<bool(json_errc,const ser_context&)>)")
-    static basic_json parse_string(const string_view_type& s, std::function<bool(json_errc,const ser_context&)> err_handler)
+    static const basic_json parse_string(const string_view_type& s, std::function<bool(json_errc,const ser_context&)> err_handler)
     {
         return parse(s,err_handler);
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use basic_json(double)")
     basic_json(double val, uint8_t)
-        : var_(val, semantic_tag::none)
+        : basic_json(val, semantic_tag::none)
     {
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use basic_json(const byte_string_view& ,semantic_tag)")
-    basic_json(const byte_string_view& bs, 
+    basic_json(const byte_string_view& bytes, 
                byte_string_chars_format encoding_hint,
                semantic_tag tag = semantic_tag::none)
-        : var_(bs, tag)
+        : basic_json(bytes, tag)
     {
         switch (encoding_hint)
         {
             {
                 case byte_string_chars_format::base16:
-                    var_ = variant(bs, semantic_tag::base16);
+                    *this = basic_json(bytes, semantic_tag::base16);
                     break;
                 case byte_string_chars_format::base64:
-                    var_ = variant(bs, semantic_tag::base64);
+                    *this = basic_json(bytes, semantic_tag::base64);
                     break;
                 case byte_string_chars_format::base64url:
-                    var_ = variant(bs, semantic_tag::base64url);
+                    *this = basic_json(bytes, semantic_tag::base64url);
                     break;
                 default:
                     break;
@@ -4492,20 +4611,20 @@ public:
     }
 
     template<class InputIterator>
-    basic_json(InputIterator first, InputIterator last, const Allocator& allocator = Allocator())
-        : var_(first,last,allocator)
+    basic_json(InputIterator first, InputIterator last, const Allocator& alloc = Allocator())
+        : basic_json(json_array_arg,first,last,alloc)
     {
     }
-    JSONCONS_DEPRECATED_MSG("Instead, use dump(basic_json_content_handler<char_type>&)")
-    void dump_fragment(basic_json_content_handler<char_type>& handler) const
+    JSONCONS_DEPRECATED_MSG("Instead, use dump(basic_json_visitor<char_type>&)")
+    void dump_fragment(basic_json_visitor<char_type>& visitor) const
     {
-        dump(handler);
+        dump(visitor);
     }
 
-    JSONCONS_DEPRECATED_MSG("Instead, use dump(basic_json_content_handler<char_type>&)")
-    void dump_body(basic_json_content_handler<char_type>& handler) const
+    JSONCONS_DEPRECATED_MSG("Instead, use dump(basic_json_visitor<char_type>&)")
+    void dump_body(basic_json_visitor<char_type>& visitor) const
     {
-        dump(handler);
+        dump(visitor);
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, indenting)")
@@ -4518,13 +4637,13 @@ public:
         }
         else
         {
-            basic_json_compressed_encoder<char_type> encoder(os);
+            basic_compact_json_encoder<char_type> encoder(os);
             dump(encoder);
         }
     }
 
-    JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, const basic_json_options<char_type>&, indenting)")
-    void dump(std::basic_ostream<char_type>& os, const basic_json_options<char_type>& options, bool pprint) const
+    JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, const basic_json_encode_options<char_type>&, indenting)")
+    void dump(std::basic_ostream<char_type>& os, const basic_json_encode_options<char_type>& options, bool pprint) const
     {
         if (pprint)
         {
@@ -4533,21 +4652,21 @@ public:
         }
         else
         {
-            basic_json_compressed_encoder<char_type> encoder(os, options);
+            basic_compact_json_encoder<char_type> encoder(os, options);
             dump(encoder);
         }
     }
 
-    JSONCONS_DEPRECATED_MSG("Instead, use dump(basic_json_content_handler<char_type>&)")
-    void write_body(basic_json_content_handler<char_type>& handler) const
+    JSONCONS_DEPRECATED_MSG("Instead, use dump(basic_json_visitor<char_type>&)")
+    void write_body(basic_json_visitor<char_type>& visitor) const
     {
-        dump(handler);
+        dump(visitor);
     }
 
-    JSONCONS_DEPRECATED_MSG("Instead, use dump(basic_json_content_handler<char_type>&)")
-    void write(basic_json_content_handler<char_type>& handler) const
+    JSONCONS_DEPRECATED_MSG("Instead, use dump(basic_json_visitor<char_type>&)")
+    void write(basic_json_visitor<char_type>& visitor) const
     {
-        dump(handler);
+        dump(visitor);
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&)")
@@ -4556,22 +4675,22 @@ public:
         dump(os);
     }
 
-    JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, const basic_json_options<char_type>&)")
-    void write(std::basic_ostream<char_type>& os, const basic_json_options<char_type>& options) const
+    JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, const basic_json_encode_options<char_type>&)")
+    void write(std::basic_ostream<char_type>& os, const basic_json_encode_options<char_type>& options) const
     {
         dump(os,options);
     }
 
-    JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, const basic_json_options<char_type>&, indenting)")
-    void write(std::basic_ostream<char_type>& os, const basic_json_options<char_type>& options, bool pprint) const
+    JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, const basic_json_encode_options<char_type>&, indenting)")
+    void write(std::basic_ostream<char_type>& os, const basic_json_encode_options<char_type>& options, bool pprint) const
     {
         dump(os,options,pprint);
     }
 
-    JSONCONS_DEPRECATED_MSG("Instead, use dump(basic_json_content_handler<char_type>&)")
-    void to_stream(basic_json_content_handler<char_type>& handler) const
+    JSONCONS_DEPRECATED_MSG("Instead, use dump(basic_json_visitor<char_type>&)")
+    void to_stream(basic_json_visitor<char_type>& visitor) const
     {
-        dump(handler);
+        dump(visitor);
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&)")
@@ -4580,54 +4699,56 @@ public:
         dump(os);
     }
 
-    JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, const basic_json_options<char_type>&)")
-    void to_stream(std::basic_ostream<char_type>& os, const basic_json_options<char_type>& options) const
+    JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, const basic_json_encode_options<char_type>&)")
+    void to_stream(std::basic_ostream<char_type>& os, const basic_json_encode_options<char_type>& options) const
     {
         dump(os,options);
     }
 
-    JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, const basic_json_options<char_type>&, indenting)")
-    void to_stream(std::basic_ostream<char_type>& os, const basic_json_options<char_type>& options, bool pprint) const
+    JSONCONS_DEPRECATED_MSG("Instead, use dump(std::basic_ostream<char_type>&, const basic_json_encode_options<char_type>&, indenting)")
+    void to_stream(std::basic_ostream<char_type>& os, const basic_json_encode_options<char_type>& options, bool pprint) const
     {
         dump(os,options,pprint ? indenting::indent : indenting::no_indent);
     }
 
-    size_t precision() const
+    JSONCONS_DEPRECATED_MSG("No replacement")
+    std::size_t precision() const
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::double_val:
+        case storage_kind::double_value:
             return 0;
         default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not a double"));
+            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not a double"));
         }
     }
 
-    size_t decimal_places() const
+    JSONCONS_DEPRECATED_MSG("No replacement")
+    std::size_t decimal_places() const
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::double_val:
+        case storage_kind::double_value:
             return 0;
         default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not a double"));
+            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not a double"));
         }
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use tag() == semantic_tag::datetime")
     bool is_datetime() const noexcept
     {
-        return var_.tag() == semantic_tag::datetime;
+        return tag() == semantic_tag::datetime;
     }
 
-    JSONCONS_DEPRECATED_MSG("Instead, use tag() == semantic_tag::timestamp")
+    JSONCONS_DEPRECATED_MSG("Instead, use tag() == semantic_tag::epoch_time")
     bool is_epoch_time() const noexcept
     {
-        return var_.tag() == semantic_tag::timestamp;
+        return tag() == semantic_tag::epoch_time;
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use contains(const string_view_type&)")
-    bool has_key(const string_view_type& name) const
+    bool has_key(const string_view_type& name) const noexcept
     {
         return contains(name);
     }
@@ -4635,13 +4756,13 @@ public:
     JSONCONS_DEPRECATED_MSG("Instead, use is_int64()")
     bool is_integer() const noexcept
     {
-        return var_.type() == storage_type::int64_val || (var_.type() == storage_type::uint64_val&& (as_integer<uint64_t>() <= static_cast<uint64_t>((std::numeric_limits<int64_t>::max)())));
+        return storage() == storage_kind::int64_value || (storage() == storage_kind::uint64_value&& (as_integer<uint64_t>() <= static_cast<uint64_t>((std::numeric_limits<int64_t>::max)())));
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use is_uint64()")
     bool is_uinteger() const noexcept
     {
-        return var_.type() == storage_type::uint64_val || (var_.type() == storage_type::int64_val&& as_integer<int64_t>() >= 0);
+        return storage() == storage_kind::uint64_value || (storage() == storage_kind::int64_value&& as_integer<int64_t>() >= 0);
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use as<uint64_t>()")
@@ -4650,25 +4771,26 @@ public:
         return as_integer<uint64_t>();
     }
 
-    size_t double_precision() const
+    JSONCONS_DEPRECATED_MSG("No replacement")
+    std::size_t double_precision() const
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::double_val:
+        case storage_kind::double_value:
             return 0;
         default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not a double"));
+            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not a double"));
         }
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use insert(const_array_iterator, T&&)")
-    void add(size_t index, const basic_json& value)
+    void add(std::size_t index, const basic_json& value)
     {
         evaluate_with_default().add(index, value);
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use insert(const_array_iterator, T&&)")
-    void add(size_t index, basic_json&& value)
+    void add(std::size_t index, basic_json&& value)
     {
         evaluate_with_default().add(index, std::forward<basic_json>(value));
     }
@@ -4688,6 +4810,7 @@ public:
     }
 
     template <class T>
+    JSONCONS_DEPRECATED_MSG("Instead, use insert_or_assign(const string_view_type&, T&&)")
     std::pair<object_iterator,bool> set(const string_view_type& name, T&& val)
     {
         return insert_or_assign(name, std::forward<T>(val));
@@ -4700,15 +4823,15 @@ public:
         return insert_or_assign(hint, name, std::forward<T>(val));
     }
 
-    JSONCONS_DEPRECATED_MSG("Instead, use resize(size_t)")
-    void resize_array(size_t n)
+    JSONCONS_DEPRECATED_MSG("Instead, use resize(std::size_t)")
+    void resize_array(std::size_t n)
     {
         resize(n);
     }
 
     template <class T>
-    JSONCONS_DEPRECATED_MSG("Instead, use resize(size_t, T)")
-    void resize_array(size_t n, T val)
+    JSONCONS_DEPRECATED_MSG("Instead, use resize(std::size_t, T)")
+    void resize_array(std::size_t n, T val)
     {
         resize(n,val);
     }
@@ -4763,24 +4886,24 @@ public:
 
     template<class T>
     JSONCONS_DEPRECATED_MSG("Instead, use get_with_default(const string_view_type&, T&&)")
-    basic_json get(const string_view_type& name, T&& default_val) const
+    basic_json get(const string_view_type& name, T&& default_value) const
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
+        case storage_kind::empty_object_value:
             {
-                return basic_json(std::forward<T>(default_val));
+                return basic_json(std::forward<T>(default_value));
             }
-        case storage_type::object_val:
+        case storage_kind::object_value:
             {
-                const_object_iterator it = object_value().find(name);
-                if (it != object_range().end())
+                auto it = object_value().find(name);
+                if (it != object_value().end())
                 {
                     return it->value();
                 }
                 else
                 {
-                    return basic_json(std::forward<T>(default_val));
+                    return basic_json(std::forward<T>(default_value));
                 }
             }
         default:
@@ -4790,19 +4913,19 @@ public:
         }
     }
 
-    JSONCONS_DEPRECATED_MSG("Instead, use get_with_default(const string_view_type&)")
+    JSONCONS_DEPRECATED_MSG("Instead, use at_or_null(const string_view_type&)")
     const basic_json& get(const string_view_type& name) const
     {
         static const basic_json a_null = null_type();
 
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
+        case storage_kind::empty_object_value:
             return a_null;
-        case storage_type::object_val:
+        case storage_kind::object_value:
             {
-                const_object_iterator it = object_value().find(name);
-                return it != object_range().end() ? it->value() : a_null;
+                auto it = object_value().find(name);
+                return it != object_value().end() ? it->value() : a_null;
             }
         default:
             {
@@ -4814,13 +4937,13 @@ public:
     JSONCONS_DEPRECATED_MSG("Instead, use is<long long>()")
     bool is_longlong() const noexcept
     {
-        return var_.type() == storage_type::int64_val;
+        return storage() == storage_kind::int64_value;
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use is<unsigned long long>()")
     bool is_ulonglong() const noexcept
     {
-        return var_.type() == storage_type::uint64_val;
+        return storage() == storage_kind::uint64_value;
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use as<long long>()")
@@ -4838,84 +4961,84 @@ public:
     JSONCONS_DEPRECATED_MSG("Instead, use as<int>()")
     int as_int() const
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::double_val:
-            return static_cast<int>(var_.double_data_cast()->value());
-        case storage_type::int64_val:
-            return static_cast<int>(var_.int64_data_cast()->value());
-        case storage_type::uint64_val:
-            return static_cast<int>(var_.uint64_data_cast()->value());
-        case storage_type::bool_val:
-            return var_.bool_data_cast()->value() ? 1 : 0;
+        case storage_kind::double_value:
+            return static_cast<int>(cast<double_storage>().value());
+        case storage_kind::int64_value:
+            return static_cast<int>(cast<int64_storage>().value());
+        case storage_kind::uint64_value:
+            return static_cast<int>(cast<uint64_storage>().value());
+        case storage_kind::bool_value:
+            return cast<bool_storage>().value() ? 1 : 0;
         default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not an int"));
+            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not an int"));
         }
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use as<unsigned int>()")
     unsigned int as_uint() const
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::double_val:
-            return static_cast<unsigned int>(var_.double_data_cast()->value());
-        case storage_type::int64_val:
-            return static_cast<unsigned int>(var_.int64_data_cast()->value());
-        case storage_type::uint64_val:
-            return static_cast<unsigned int>(var_.uint64_data_cast()->value());
-        case storage_type::bool_val:
-            return var_.bool_data_cast()->value() ? 1 : 0;
+        case storage_kind::double_value:
+            return static_cast<unsigned int>(cast<double_storage>().value());
+        case storage_kind::int64_value:
+            return static_cast<unsigned int>(cast<int64_storage>().value());
+        case storage_kind::uint64_value:
+            return static_cast<unsigned int>(cast<uint64_storage>().value());
+        case storage_kind::bool_value:
+            return cast<bool_storage>().value() ? 1 : 0;
         default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not an unsigned int"));
+            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not an unsigned int"));
         }
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use as<long>()")
     long as_long() const
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::double_val:
-            return static_cast<long>(var_.double_data_cast()->value());
-        case storage_type::int64_val:
-            return static_cast<long>(var_.int64_data_cast()->value());
-        case storage_type::uint64_val:
-            return static_cast<long>(var_.uint64_data_cast()->value());
-        case storage_type::bool_val:
-            return var_.bool_data_cast()->value() ? 1 : 0;
+        case storage_kind::double_value:
+            return static_cast<long>(cast<double_storage>().value());
+        case storage_kind::int64_value:
+            return static_cast<long>(cast<int64_storage>().value());
+        case storage_kind::uint64_value:
+            return static_cast<long>(cast<uint64_storage>().value());
+        case storage_kind::bool_value:
+            return cast<bool_storage>().value() ? 1 : 0;
         default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not a long"));
+            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not a long"));
         }
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use as<unsigned long>()")
     unsigned long as_ulong() const
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::double_val:
-            return static_cast<unsigned long>(var_.double_data_cast()->value());
-        case storage_type::int64_val:
-            return static_cast<unsigned long>(var_.int64_data_cast()->value());
-        case storage_type::uint64_val:
-            return static_cast<unsigned long>(var_.uint64_data_cast()->value());
-        case storage_type::bool_val:
-            return var_.bool_data_cast()->value() ? 1 : 0;
+        case storage_kind::double_value:
+            return static_cast<unsigned long>(cast<double_storage>().value());
+        case storage_kind::int64_value:
+            return static_cast<unsigned long>(cast<int64_storage>().value());
+        case storage_kind::uint64_value:
+            return static_cast<unsigned long>(cast<uint64_storage>().value());
+        case storage_kind::bool_value:
+            return cast<bool_storage>().value() ? 1 : 0;
         default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not an unsigned long"));
+            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not an unsigned long"));
         }
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use contains(const string_view_type&)")
-    bool has_member(const string_view_type& name) const
+    bool has_member(const string_view_type& name) const noexcept
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::object_val:
+        case storage_kind::object_value:
             {
-                const_object_iterator it = object_value().find(name);
-                return it != object_range().end();
+                auto it = object_value().find(name);
+                return it != object_value().end();
             }
             break;
         default:
@@ -4924,11 +5047,11 @@ public:
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use erase(const_object_iterator, const_object_iterator)")
-    void remove_range(size_t from_index, size_t to_index)
+    void remove_range(std::size_t from_index, std::size_t to_index)
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::array_val:
+        case storage_kind::array_value:
             array_value().remove_range(from_index, to_index);
             break;
         default:
@@ -4960,240 +5083,214 @@ public:
         return is_number();
     }
 
-    template<int size>
-    JSONCONS_DEPRECATED_MSG("Instead, use make_array()")
-    static typename std::enable_if<size==1,basic_json>::type make_multi_array()
-    {
-        return make_array();
-    }
-    template<size_t size>
-    JSONCONS_DEPRECATED_MSG("Instead, use make_array(size_t)")
-    static typename std::enable_if<size==1,basic_json>::type make_multi_array(size_t n)
-    {
-        return make_array(n);
-    }
-    template<size_t size,typename T>
-    JSONCONS_DEPRECATED_MSG("Instead, use make_array(size_t, T)")
-    static typename std::enable_if<size==1,basic_json>::type make_multi_array(size_t n, T val)
-    {
-        return make_array(n,val);
-    }
-    template<size_t size>
-    JSONCONS_DEPRECATED_MSG("Instead, use make_array(size_t, size_t)")
-    static typename std::enable_if<size==2,basic_json>::type make_multi_array(size_t m, size_t n)
-    {
-        return make_array<2>(m, n);
-    }
-    template<size_t size,typename T>
-    JSONCONS_DEPRECATED_MSG("Instead, use make_array(size_t, size_t, T)")
-    static typename std::enable_if<size==2,basic_json>::type make_multi_array(size_t m, size_t n, T val)
-    {
-        return make_array<2>(m, n, val);
-    }
-    template<size_t size>
-    JSONCONS_DEPRECATED_MSG("Instead, use make_array(size_t, size_t, size_t)")
-    static typename std::enable_if<size==3,basic_json>::type make_multi_array(size_t m, size_t n, size_t k)
-    {
-        return make_array<3>(m, n, k);
-    }
-    template<size_t size,typename T>
-    JSONCONS_DEPRECATED_MSG("Instead, use make_array(size_t, size_t, size_t, T)")
-    static typename std::enable_if<size==3,basic_json>::type make_multi_array(size_t m, size_t n, size_t k, T val)
-    {
-        return make_array<3>(m, n, k, val);
-    }
     JSONCONS_DEPRECATED_MSG("Instead, use object_range()")
-    range<object_iterator> members()
+    range<object_iterator, const_object_iterator> members()
     {
         return object_range();
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use object_range()")
-    range<const_object_iterator> members() const
+    range<const_object_iterator, const_object_iterator> members() const
     {
         return object_range();
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use array_range()")
-    range<array_iterator> elements()
+    range<array_iterator, const_array_iterator> elements()
     {
         return array_range();
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use array_range()")
-    range<const_array_iterator> elements() const
+    range<const_array_iterator, const_array_iterator> elements() const
     {
         return array_range();
     }
 
-    JSONCONS_DEPRECATED_MSG("Instead, use type()")
-    storage_type get_storage_type() const
+    JSONCONS_DEPRECATED_MSG("Instead, use storage()")
+    storage_kind get_stor_type() const
     {
-        return var_.type();
+        return storage();
     }
 #endif
 
-    range<object_iterator> object_range()
+    range<object_iterator, const_object_iterator> object_range()
     {
-        static basic_json empty_object = object();
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
-            return range<object_iterator>(empty_object.object_range().begin(), empty_object.object_range().end());
-        case storage_type::object_val:
-            return range<object_iterator>(object_value().begin(),object_value().end());
+        case storage_kind::empty_object_value:
+            return range<object_iterator, const_object_iterator>(object_iterator(), object_iterator());
+        case storage_kind::object_value:
+            return range<object_iterator, const_object_iterator>(object_iterator(object_value().begin()),
+                                          object_iterator(object_value().end()));
         default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not an object"));
+            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not an object"));
         }
     }
 
-    range<const_object_iterator> object_range() const
+    range<const_object_iterator, const_object_iterator> object_range() const
     {
-        static const basic_json empty_object = object();
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
-            return range<const_object_iterator>(empty_object.object_range().begin(), empty_object.object_range().end());
-        case storage_type::object_val:
-            return range<const_object_iterator>(object_value().begin(),object_value().end());
+        case storage_kind::empty_object_value:
+            return range<const_object_iterator, const_object_iterator>(const_object_iterator(), const_object_iterator());
+        case storage_kind::object_value:
+            return range<const_object_iterator, const_object_iterator>(const_object_iterator(object_value().begin()),
+                                                const_object_iterator(object_value().end()));
         default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not an object"));
+            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not an object"));
         }
     }
 
-    range<array_iterator> array_range()
+    range<array_iterator, const_array_iterator> array_range()
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::array_val:
-            return range<array_iterator>(array_value().begin(),array_value().end());
+        case storage_kind::array_value:
+            return range<array_iterator, const_array_iterator>(array_value().begin(),array_value().end());
         default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not an array"));
+            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not an array"));
         }
     }
 
-    range<const_array_iterator> array_range() const
+    range<const_array_iterator, const_array_iterator> array_range() const
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::array_val:
-            return range<const_array_iterator>(array_value().begin(),array_value().end());
+        case storage_kind::array_value:
+            return range<const_array_iterator, const_array_iterator>(array_value().begin(),array_value().end());
         default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Not an array"));
+            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not an array"));
         }
     }
 
     array& array_value() 
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::array_val:
-            return var_.array_data_cast()->value();
+        case storage_kind::array_value:
+            return cast<array_storage>().value();
         default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Bad array cast"));
+            JSONCONS_THROW(json_runtime_error<std::domain_error>("Bad array cast"));
             break;
         }
     }
 
     const array& array_value() const
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::array_val:
-            return var_.array_data_cast()->value();
+        case storage_kind::array_value:
+            return cast<array_storage>().value();
         default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Bad array cast"));
+            JSONCONS_THROW(json_runtime_error<std::domain_error>("Bad array cast"));
             break;
         }
     }
 
     object& object_value()
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
+        case storage_kind::empty_object_value:
             create_object_implicitly();
             JSONCONS_FALLTHROUGH;
-        case storage_type::object_val:
-            return var_.object_data_cast()->value();
+        case storage_kind::object_value:
+            return cast<object_storage>().value();
         default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Bad object cast"));
+            JSONCONS_THROW(json_runtime_error<std::domain_error>("Bad object cast"));
             break;
         }
     }
 
     const object& object_value() const
     {
-        switch (var_.type())
+        switch (storage())
         {
-        case storage_type::empty_object_val:
+        case storage_kind::empty_object_value:
             const_cast<basic_json*>(this)->create_object_implicitly(); // HERE
             JSONCONS_FALLTHROUGH;
-        case storage_type::object_val:
-            return var_.object_data_cast()->value();
+        case storage_kind::object_value:
+            return cast<object_storage>().value();
         default:
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Bad object cast"));
+            JSONCONS_THROW(json_runtime_error<std::domain_error>("Bad object cast"));
             break;
         }
     }
 
 private:
 
-    void dump_noflush(basic_json_content_handler<char_type>& handler) const
+    void dump_noflush(basic_json_visitor<char_type>& visitor, std::error_code& ec) const
     {
-        switch (var_.type())
+        const ser_context context{};
+        switch (storage())
         {
-            case storage_type::short_string_val:
-            case storage_type::long_string_val:
-                handler.string_value(as_string_view(), var_.tag());
+            case storage_kind::short_string_value:
+            case storage_kind::long_string_value:
+                visitor.string_value(as_string_view(), tag(), context, ec);
                 break;
-            case storage_type::byte_string_val:
-                handler.byte_string_value(var_.byte_string_data_cast()->data(), var_.byte_string_data_cast()->length(), 
-                                          var_.tag());
-                break;
-            case storage_type::double_val:
-                handler.double_value(var_.double_data_cast()->value(), 
-                                     var_.tag());
-                break;
-            case storage_type::int64_val:
-                handler.int64_value(var_.int64_data_cast()->value(), var_.tag());
-                break;
-            case storage_type::uint64_val:
-                handler.uint64_value(var_.uint64_data_cast()->value(), var_.tag());
-                break;
-            case storage_type::bool_val:
-                handler.bool_value(var_.bool_data_cast()->value(), var_.tag());
-                break;
-            case storage_type::null_val:
-                handler.null_value(var_.tag());
-                break;
-            case storage_type::empty_object_val:
-                handler.begin_object(0, var_.tag());
-                handler.end_object();
-                break;
-            case storage_type::object_val:
+            case storage_kind::byte_string_value:
+                if (tag() == semantic_tag::ext)
                 {
-                    handler.begin_object(size(), var_.tag());
-                    const object& o = object_value();
-                    for (const_object_iterator it = o.begin(); it != o.end(); ++it)
-                    {
-                        handler.name(string_view_type((it->key()).data(),it->key().length()));
-                        it->value().dump_noflush(handler);
-                    }
-                    handler.end_object();
+                    visitor.byte_string_value(as_byte_string_view(), ext_tag(), context, ec);
+                }
+                else
+                {
+                    visitor.byte_string_value(as_byte_string_view(), tag(), context, ec);
                 }
                 break;
-            case storage_type::array_val:
+            case storage_kind::half_value:
+                visitor.half_value(cast<half_storage>().value(), tag(), context, ec);
+                break;
+            case storage_kind::double_value:
+                visitor.double_value(cast<double_storage>().value(), 
+                                     tag(), context, ec);
+                break;
+            case storage_kind::int64_value:
+                visitor.int64_value(cast<int64_storage>().value(), tag(), context, ec);
+                break;
+            case storage_kind::uint64_value:
+                visitor.uint64_value(cast<uint64_storage>().value(), tag(), context, ec);
+                break;
+            case storage_kind::bool_value:
+                visitor.bool_value(cast<bool_storage>().value(), tag(), context, ec);
+                break;
+            case storage_kind::null_value:
+                visitor.null_value(tag(), context, ec);
+                break;
+            case storage_kind::empty_object_value:
+                visitor.begin_object(0, tag(), context, ec);
+                visitor.end_object(context, ec);
+                break;
+            case storage_kind::object_value:
+            {
+                bool more = visitor.begin_object(size(), tag(), context, ec);
+                const object& o = object_value();
+                for (auto it = o.begin(); more && it != o.end(); ++it)
                 {
-                    handler.begin_array(size(), var_.tag());
-                    const array& o = array_value();
-                    for (const_array_iterator it = o.begin(); it != o.end(); ++it)
-                    {
-                        it->dump_noflush(handler);
-                    }
-                    handler.end_array();
+                    visitor.key(string_view_type((it->key()).data(),it->key().length()), context, ec);
+                    it->value().dump_noflush(visitor, ec);
+                }
+                if (more)
+                {
+                    visitor.end_object(context, ec);
                 }
                 break;
+            }
+            case storage_kind::array_value:
+            {
+                bool more = visitor.begin_array(size(), tag(), context, ec);
+                const array& o = array_value();
+                for (const_array_iterator it = o.begin(); more && it != o.end(); ++it)
+                {
+                    it->dump_noflush(visitor, ec);
+                }
+                if (more)
+                {
+                    visitor.end_array(context, ec);
+                }
+                break;
+            }
             default:
                 break;
         }
@@ -5207,29 +5304,29 @@ private:
 
     friend std::basic_istream<char_type>& operator>>(std::basic_istream<char_type>& is, basic_json& o)
     {
-        json_decoder<basic_json> handler;
-        basic_json_reader<char_type,stream_source<char_type>> reader(is, handler);
+        json_decoder<basic_json> visitor;
+        basic_json_reader<char_type,stream_source<char_type>> reader(is, visitor);
         reader.read_next();
         reader.check_done();
-        if (!handler.is_valid())
+        if (!visitor.is_valid())
         {
             JSONCONS_THROW(json_runtime_error<std::runtime_error>("Failed to parse json stream"));
         }
-        o = handler.get_result();
+        o = visitor.get_result();
         return is;
     }
 };
 
 template <class Json>
-void swap(typename Json::key_value_type& a, typename Json::key_value_type& b)
+void swap(typename Json::key_value_type& a, typename Json::key_value_type& b) noexcept
 {
     a.swap(b);
 }
 
-typedef basic_json<char,sorted_policy,std::allocator<char>> json;
-typedef basic_json<wchar_t,sorted_policy,std::allocator<char>> wjson;
-typedef basic_json<char, preserve_order_policy, std::allocator<char>> ojson;
-typedef basic_json<wchar_t, preserve_order_policy, std::allocator<char>> wojson;
+using json = basic_json<char,sorted_policy,std::allocator<char>>;
+using wjson = basic_json<wchar_t,sorted_policy,std::allocator<char>>;
+using ojson = basic_json<char, preserve_order_policy, std::allocator<char>>;
+using wojson = basic_json<wchar_t, preserve_order_policy, std::allocator<char>>;
 
 #if !defined(JSONCONS_NO_DEPRECATED)
 JSONCONS_DEPRECATED_MSG("Instead, use wojson") typedef basic_json<wchar_t, preserve_order_policy, std::allocator<wchar_t>> owjson;
@@ -5265,8 +5362,9 @@ jsoncons::wojson operator "" _ojson(const wchar_t* s, std::size_t n)
     return jsoncons::wojson::parse(jsoncons::wojson::string_view_type(s, n));
 }
 
-}
+} // inline namespace literals
 
-}
+
+} // namespace jsoncons
 
 #endif

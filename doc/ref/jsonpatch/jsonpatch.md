@@ -22,24 +22,25 @@ The patch function implements this requirement by generating the inverse command
 #include <jsoncons/json.hpp>
 #include <jsoncons_ext/jsonpatch/jsonpatch.hpp>
 
-using namespace jsoncons;
+using jsoncons::json;
+namespace jsonpatch = jsoncons::jsonpatch;
 
 int main()
 {
     // Apply a JSON Patch
 
-    json doc = R"(
+    json doc = json::parse(R"(
         { "foo": "bar"}
-    )"_json;
+    )");
 
     json doc2 = doc;
 
-    json patch = R"(
+    json patch = json::parse(R"(
         [
             { "op": "add", "path": "/baz", "value": "qux" },
             { "op": "add", "path": "/foo", "value": [ "bar", "baz" ] }
         ]
-    )"_json;
+    )");
 
     std::error_code ec;
     jsonpatch::apply_patch(doc, patch, ec);

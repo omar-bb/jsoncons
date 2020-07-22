@@ -13,9 +13,9 @@
 #include <memory>
 #include <utility> // std::move
 #include <jsoncons/json_exception.hpp> // jsoncons::ser_error
-#include <jsoncons/json_content_handler.hpp>
-#include <jsoncons/config/binary_detail.hpp>
-#include <jsoncons/result.hpp>
+#include <jsoncons/json_visitor.hpp>
+#include <jsoncons/config/jsoncons_config.hpp>
+#include <jsoncons/sink.hpp>
 #include <jsoncons/detail/parse_number.hpp>
 #include <jsoncons_ext/cbor/cbor_error.hpp>
 #include <jsoncons_ext/cbor/cbor_options.hpp>
@@ -24,35 +24,44 @@ namespace jsoncons { namespace cbor {
 
 enum class cbor_container_type {object, indefinite_length_object, array, indefinite_length_array};
 
-template<class Result=jsoncons::binary_stream_result>
-class basic_cbor_encoder final : public basic_json_content_handler<char>
+template<class Sink=jsoncons::binary_stream_sink,class Allocator=std::allocator<char>>
+class basic_cbor_encoder final : public basic_json_visitor<char>
 {
+    using super_type = basic_json_visitor<char>;
+
     enum class decimal_parse_state { start, integer, exp1, exp2, fraction1 };
     enum class hexfloat_parse_state { start, expect_0, expect_x, integer, exp1, exp2, fraction1 };
 
 public:
-    typedef char char_type;
-    typedef Result result_type;
-    using typename basic_json_content_handler<char>::string_view_type;
+    using allocator_type = Allocator;
+    using sink_type = Sink;
+    using typename super_type::char_type;
+    using typename super_type::string_view_type;
 
 private:
+    using char_allocator_type = typename std::allocator_traits<allocator_type>:: template rebind_alloc<char_type>;
+    using byte_allocator_type = typename std::allocator_traits<allocator_type>:: template rebind_alloc<uint8_t>;                  
+
+    using string_type = std::basic_string<char_type,std::char_traits<char_type>,char_allocator_type>;
+    using byte_string_type = basic_byte_string<byte_allocator_type>;
+
     struct stack_item
     {
         cbor_container_type type_;
-        size_t length_;
-        size_t count_;
+        std::size_t length_;
+        std::size_t count_;
 
-        stack_item(cbor_container_type type, size_t length = 0)
+        stack_item(cbor_container_type type, std::size_t length = 0) noexcept
            : type_(type), length_(length), count_(0)
         {
         }
 
-        size_t length() const
+        std::size_t length() const
         {
             return length_;
         }
 
-        size_t count() const
+        std::size_t count() const
         {
             return count_;
         }
@@ -68,41 +77,56 @@ private:
         }
 
     };
-    std::vector<stack_item> stack_;
-    Result result_;
-    const cbor_encode_options& options_;
+
+    typedef typename std::allocator_traits<allocator_type>:: template rebind_alloc<std::pair<const string_type,size_t>> string_size_allocator_type;
+    typedef typename std::allocator_traits<allocator_type>:: template rebind_alloc<std::pair<const byte_string_type,size_t>> byte_string_size_allocator_type;
+    typedef typename std::allocator_traits<allocator_type>:: template rebind_alloc<stack_item> stack_item_allocator_type;
+
+    Sink sink_;
+    const cbor_encode_options options_;
+    allocator_type alloc_;
+
+    std::vector<stack_item,stack_item_allocator_type> stack_;
+    std::map<string_type,size_t,std::less<string_type>,string_size_allocator_type> stringref_map_;
+    std::map<byte_string_type,size_t,std::less<byte_string_type>,byte_string_size_allocator_type> bytestringref_map_;
+    std::size_t next_stringref_ = 0;
+    int nesting_depth_;
 
     // Noncopyable and nonmoveable
     basic_cbor_encoder(const basic_cbor_encoder&) = delete;
     basic_cbor_encoder& operator=(const basic_cbor_encoder&) = delete;
-
-    std::map<std::string,size_t> stringref_map_;
-    std::map<byte_string,size_t> bytestringref_map_;
-    size_t next_stringref_ = 0;
 public:
-    explicit basic_cbor_encoder(result_type result)
-       : result_(std::move(result)), options_(cbor_options::get_default_options())
+    explicit basic_cbor_encoder(Sink&& sink, 
+                                const Allocator& alloc = Allocator())
+       : basic_cbor_encoder(std::forward<Sink>(sink), cbor_encode_options(), alloc)
     {
     }
-    basic_cbor_encoder(result_type result, const cbor_encode_options& options)
-       : result_(std::move(result)), options_(options)
+    basic_cbor_encoder(Sink&& sink, 
+                       const cbor_encode_options& options, 
+                       const Allocator& alloc = Allocator())
+       : sink_(std::forward<Sink>(sink)), 
+         options_(options), 
+         alloc_(alloc),
+         stack_(alloc),
+#if !defined(JSONCONS_NO_MAP_TAKING_ALLOCATOR) 
+         stringref_map_(alloc),
+         bytestringref_map_(alloc),
+#endif 
+         nesting_depth_(0)        
     {
         if (options.pack_strings())
         {
-            // tag(256)
-            result_.push_back(0xd9);
-            result_.push_back(0x01);
-            result_.push_back(0x00);
+            write_tag(256);
         }
     }
 
-    ~basic_cbor_encoder()
+    ~basic_cbor_encoder() noexcept
     {
-        try
+        JSONCONS_TRY
         {
-            result_.flush();
+            sink_.flush();
         }
-        catch (...)
+        JSONCONS_CATCH(...)
         {
         }
     }
@@ -110,76 +134,90 @@ public:
 private:
     // Implementing methods
 
-    void do_flush() override
+    void visit_flush() override
     {
-        result_.flush();
+        sink_.flush();
     }
 
-    bool do_begin_object(semantic_tag, const ser_context&) override
+    bool visit_begin_object(semantic_tag, const ser_context&, std::error_code& ec) override
     {
+        if (JSONCONS_UNLIKELY(++nesting_depth_ > options_.max_nesting_depth()))
+        {
+            ec = cbor_errc::max_nesting_depth_exceeded;
+            return false;
+        } 
         stack_.push_back(stack_item(cbor_container_type::indefinite_length_object));
         
-        result_.push_back(0xbf);
+        sink_.push_back(0xbf);
         return true;
     }
 
-    bool do_begin_object(size_t length, semantic_tag, const ser_context&) override
+    bool visit_begin_object(std::size_t length, semantic_tag, const ser_context&, std::error_code& ec) override
     {
+        if (JSONCONS_UNLIKELY(++nesting_depth_ > options_.max_nesting_depth()))
+        {
+            ec = cbor_errc::max_nesting_depth_exceeded;
+            return false;
+        } 
         stack_.push_back(stack_item(cbor_container_type::object, length));
 
         if (length <= 0x17)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0xa0 + length), 
-                                  std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0xa0 + length), 
+                                  std::back_inserter(sink_));
         } 
         else if (length <= 0xff)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0xb8), 
-                                  std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(length), 
-                                  std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0xb8), 
+                                  std::back_inserter(sink_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(length), 
+                                  std::back_inserter(sink_));
         } 
         else if (length <= 0xffff)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0xb9), 
-                                  std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint16_t>(length), 
-                                  std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0xb9), 
+                                  std::back_inserter(sink_));
+            jsoncons::detail::native_to_big(static_cast<uint16_t>(length), 
+                                  std::back_inserter(sink_));
         } 
         else if (length <= 0xffffffff)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0xba), 
-                                  std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint32_t>(length), 
-                                  std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0xba), 
+                                  std::back_inserter(sink_));
+            jsoncons::detail::native_to_big(static_cast<uint32_t>(length), 
+                                  std::back_inserter(sink_));
         } 
         else if (length <= 0xffffffffffffffff)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0xbb), 
-                                  std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint64_t>(length), 
-                                  std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0xbb), 
+                                  std::back_inserter(sink_));
+            jsoncons::detail::native_to_big(static_cast<uint64_t>(length), 
+                                  std::back_inserter(sink_));
         }
 
         return true;
     }
 
-    bool do_end_object(const ser_context&) override
+    bool visit_end_object(const ser_context&, std::error_code& ec) override
     {
         JSONCONS_ASSERT(!stack_.empty());
+        --nesting_depth_;
+
         if (stack_.back().is_indefinite_length())
         {
-            result_.push_back(0xff);
+            sink_.push_back(0xff);
         }
         else
         {
             if (stack_.back().count() < stack_.back().length())
             {
-                throw ser_error(cbor_errc::too_few_items);
+                ec = cbor_errc::too_few_items;
+                return false;
             }
             if (stack_.back().count() > stack_.back().length())
             {
-                throw ser_error(cbor_errc::too_many_items);
+                ec = cbor_errc::too_many_items;
+                return false;
             }
         }
 
@@ -189,69 +227,82 @@ private:
         return true;
     }
 
-    bool do_begin_array(semantic_tag, const ser_context&) override
+    bool visit_begin_array(semantic_tag, const ser_context&, std::error_code& ec) override
     {
+        if (JSONCONS_UNLIKELY(++nesting_depth_ > options_.max_nesting_depth()))
+        {
+            ec = cbor_errc::max_nesting_depth_exceeded;
+            return false;
+        } 
         stack_.push_back(stack_item(cbor_container_type::indefinite_length_array));
-        result_.push_back(0x9f);
+        sink_.push_back(0x9f);
         return true;
     }
 
-    bool do_begin_array(size_t length, semantic_tag, const ser_context&) override
+    bool visit_begin_array(std::size_t length, semantic_tag, const ser_context&, std::error_code& ec) override
     {
+        if (JSONCONS_UNLIKELY(++nesting_depth_ > options_.max_nesting_depth()))
+        {
+            ec = cbor_errc::max_nesting_depth_exceeded;
+            return false;
+        } 
         stack_.push_back(stack_item(cbor_container_type::array, length));
         if (length <= 0x17)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x80 + length), 
-                                  std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0x80 + length), 
+                                  std::back_inserter(sink_));
         } 
         else if (length <= 0xff)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x98), 
-                                  std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(length), 
-                                  std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0x98), 
+                                  std::back_inserter(sink_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(length), 
+                                  std::back_inserter(sink_));
         } 
         else if (length <= 0xffff)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x99), 
-                                  std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint16_t>(length), 
-                                  std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0x99), 
+                                  std::back_inserter(sink_));
+            jsoncons::detail::native_to_big(static_cast<uint16_t>(length), 
+                                  std::back_inserter(sink_));
         } 
         else if (length <= 0xffffffff)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x9a), 
-                                  std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint32_t>(length), 
-                                  std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0x9a), 
+                                  std::back_inserter(sink_));
+            jsoncons::detail::native_to_big(static_cast<uint32_t>(length), 
+                                  std::back_inserter(sink_));
         } 
         else if (length <= 0xffffffffffffffff)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x9b), 
-                                  std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint64_t>(length), 
-                                  std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0x9b), 
+                                  std::back_inserter(sink_));
+            jsoncons::detail::native_to_big(static_cast<uint64_t>(length), 
+                                  std::back_inserter(sink_));
         }
         return true;
     }
 
-    bool do_end_array(const ser_context&) override
+    bool visit_end_array(const ser_context&, std::error_code& ec) override
     {
         JSONCONS_ASSERT(!stack_.empty());
+        --nesting_depth_;
 
         if (stack_.back().is_indefinite_length())
         {
-            result_.push_back(0xff);
+            sink_.push_back(0xff);
         }
         else
         {
             if (stack_.back().count() < stack_.back().length())
             {
-                throw ser_error(cbor_errc::too_few_items);
+                ec = cbor_errc::too_few_items;
+                return false;
             }
             if (stack_.back().count() > stack_.back().length())
             {
-                throw ser_error(cbor_errc::too_many_items);
+                ec = cbor_errc::too_many_items;
+                return false;
             }
         }
 
@@ -261,21 +312,21 @@ private:
         return true;
     }
 
-    bool do_name(const string_view_type& name, const ser_context&) override
+    bool visit_key(const string_view_type& name, const ser_context&, std::error_code&) override
     {
         write_string(name);
         return true;
     }
 
-    bool do_null_value(semantic_tag tag, const ser_context&) override
+    bool visit_null(semantic_tag tag, const ser_context&, std::error_code&) override
     {
         if (tag == semantic_tag::undefined)
         {
-            result_.push_back(0xf7);
+            sink_.push_back(0xf7);
         }
         else
         {
-            result_.push_back(0xf6);
+            sink_.push_back(0xf6);
         }
 
         end_value();
@@ -284,26 +335,24 @@ private:
 
     void write_string(const string_view& sv)
     {
-        auto result = unicons::validate(sv.begin(), sv.end());
-        if (result.ec != unicons::conv_errc())
+        auto sink = unicons::validate(sv.begin(), sv.end());
+        if (sink.ec != unicons::conv_errc())
         {
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Illegal unicode"));
+            JSONCONS_THROW(ser_error(cbor_errc::invalid_utf8_text_string));
         }
 
         if (options_.pack_strings() && sv.size() >= jsoncons::cbor::detail::min_length_for_stringref(next_stringref_))
         {
-            std::string s(sv);
+            string_type s(sv.data(), sv.size(), alloc_);
             auto it = stringref_map_.find(s);
             if (it == stringref_map_.end())
             {
-                stringref_map_.insert(std::make_pair(std::move(s), next_stringref_++));
+                stringref_map_.emplace(std::make_pair(std::move(s), next_stringref_++));
                 write_utf8_string(sv);
             }
             else
             {
-                // tag(25)
-                result_.push_back(0xd8); 
-                result_.push_back(0x19); 
+                write_tag(25);
                 write_uint64_value(it->second);
             }
         }
@@ -320,103 +369,111 @@ private:
         if (length <= 0x17)
         {
             // fixstr stores a byte array whose length is upto 31 bytes
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x60 + length), 
-                                            std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0x60 + length), 
+                                            std::back_inserter(sink_));
         }
         else if (length <= 0xff)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x78), 
-                                            std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(length), 
-                                            std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0x78), 
+                                            std::back_inserter(sink_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(length), 
+                                            std::back_inserter(sink_));
         }
         else if (length <= 0xffff)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x79), 
-                                            std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint16_t>(length), 
-                                            std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0x79), 
+                                            std::back_inserter(sink_));
+            jsoncons::detail::native_to_big(static_cast<uint16_t>(length), 
+                                            std::back_inserter(sink_));
         }
         else if (length <= 0xffffffff)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x7a), 
-                                            std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint32_t>(length), 
-                                            std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0x7a), 
+                                            std::back_inserter(sink_));
+            jsoncons::detail::native_to_big(static_cast<uint32_t>(length), 
+                                            std::back_inserter(sink_));
         }
         else if (length <= 0xffffffffffffffff)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x7b), 
-                                            std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint64_t>(length), 
-                                            std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0x7b), 
+                                            std::back_inserter(sink_));
+            jsoncons::detail::native_to_big(static_cast<uint64_t>(length), 
+                                            std::back_inserter(sink_));
         }
 
         for (auto c : sv)
         {
-            result_.push_back(c);
+            sink_.push_back(c);
         }
     }
 
-    void write_bignum(const bignum& n)
+    void write_bignum(bigint& n)
     {
+        bool is_neg = n < 0;
+        if (is_neg)
+        {
+            n = - n -1;
+        }
+
         int signum;
         std::vector<uint8_t> data;
-        n.dump(signum, data);
-        size_t length = data.size();
+        n.write_bytes_be(signum, data);
+        std::size_t length = data.size();
 
-        if (signum == -1)
+        if (is_neg)
         {
-            result_.push_back(0xc3);
+            write_tag(3);
         }
         else
         {
-            result_.push_back(0xc2);
+            write_tag(2);
         }
 
         if (length <= 0x17)
         {
             // fixstr stores a byte array whose length is upto 31 bytes
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x40 + length), 
-                                  std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0x40 + length), 
+                                  std::back_inserter(sink_));
         }
         else if (length <= 0xff)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x58), 
-                                  std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(length), 
-                                  std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0x58), 
+                                  std::back_inserter(sink_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(length), 
+                                  std::back_inserter(sink_));
         }
         else if (length <= 0xffff)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x59), 
-                                  std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint16_t>(length), 
-                                  std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0x59), 
+                                  std::back_inserter(sink_));
+            jsoncons::detail::native_to_big(static_cast<uint16_t>(length), 
+                                  std::back_inserter(sink_));
         }
         else if (length <= 0xffffffff)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x5a), 
-                                  std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint32_t>(length), 
-                                  std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0x5a), 
+                                  std::back_inserter(sink_));
+            jsoncons::detail::native_to_big(static_cast<uint32_t>(length), 
+                                  std::back_inserter(sink_));
         }
         else if (length <= 0xffffffffffffffff)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x5b), 
-                                  std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint64_t>(length), 
-                                  std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0x5b), 
+                                  std::back_inserter(sink_));
+            jsoncons::detail::native_to_big(static_cast<uint64_t>(length), 
+                                  std::back_inserter(sink_));
         }
 
         for (auto c : data)
         {
-            result_.push_back(c);
+            sink_.push_back(c);
         }
     }
 
-    void write_decimal_value(const string_view_type& sv, const ser_context& context)
+    bool write_decimal_value(const string_view_type& sv, const ser_context& context, std::error_code& ec)
     {
+        bool more = true;
+
         decimal_parse_state state = decimal_parse_state::start;
         std::basic_string<char> s;
         std::basic_string<char> exponent;
@@ -438,7 +495,10 @@ private:
                             state = decimal_parse_state::integer;
                             break;
                         default:
-                            throw std::invalid_argument("Invalid decimal string");
+                        {
+                            ec = cbor_errc::invalid_decimal_fraction;
+                            return false;
+                        }
                     }
                     break;
                 }
@@ -457,7 +517,10 @@ private:
                             state = decimal_parse_state::fraction1;
                             break;
                         default:
-                            throw std::invalid_argument("Invalid decimal string");
+                        {
+                            ec = cbor_errc::invalid_decimal_fraction;
+                            return false;
+                        }
                     }
                     break;
                 }
@@ -477,7 +540,10 @@ private:
                             state = decimal_parse_state::exp2;
                             break;
                         default:
-                            throw std::invalid_argument("Invalid decimal string");
+                        {
+                            ec = cbor_errc::invalid_decimal_fraction;
+                            return false;
+                        }
                     }
                     break;
                 }
@@ -489,7 +555,10 @@ private:
                             exponent.push_back(c);
                             break;
                         default:
-                            throw std::invalid_argument("Invalid decimal string");
+                        {
+                            ec = cbor_errc::invalid_decimal_fraction;
+                            return false;
+                        }
                     }
                     break;
                 }
@@ -502,46 +571,58 @@ private:
                             --scale;
                             break;
                         default:
-                            throw std::invalid_argument("Invalid decimal string");
+                        {
+                            ec = cbor_errc::invalid_decimal_fraction;
+                            return false;
+                        }
                     }
                     break;
                 }
             }
         }
 
-        result_.push_back(0xc4);
-        do_begin_array((size_t)2, semantic_tag::none, context);
+        write_tag(4);
+        more = visit_begin_array((std::size_t)2, semantic_tag::none, context, ec);
+        if (!more) {return more;}
         if (exponent.length() > 0)
         {
-            auto result = jsoncons::detail::to_integer<int64_t>(exponent.data(), exponent.length());
-            if (result.ec != jsoncons::detail::to_integer_errc())
+            auto sink = jsoncons::detail::to_integer<int64_t>(exponent.data(), exponent.length());
+            if (!sink)
             {
-                JSONCONS_THROW(json_runtime_error<std::invalid_argument>(make_error_code(result.ec).message()));
+                ec = sink.error_code();
+                return false;
             }
-            scale += result.value;
+            scale += sink.value();
         }
-        do_int64_value(scale, semantic_tag::none, context);
+        more = visit_int64(scale, semantic_tag::none, context, ec);
+        if (!more) {return more;}
 
-        auto result = jsoncons::detail::to_integer<int64_t>(s.data(),s.length());
-        if (result.ec == jsoncons::detail::to_integer_errc())
+        auto sink = jsoncons::detail::to_integer<int64_t>(s.data(),s.length());
+        if (sink)
         {
-            do_int64_value(result.value, semantic_tag::none, context);
+            more = visit_int64(sink.value(), semantic_tag::none, context, ec);
+            if (!more) {return more;}
         }
-        else if (result.ec == jsoncons::detail::to_integer_errc::overflow)
+        else if (sink.error_code() == jsoncons::detail::to_integer_errc::overflow)
         {
-            bignum n(s.data(), s.length());
+            bigint n = bigint::from_string(s.data(), s.length());
             write_bignum(n);
             end_value();
         }
         else
         {
-            JSONCONS_THROW(json_runtime_error<std::invalid_argument>(make_error_code(result.ec).message()));
+            ec = sink.error_code();
+            return false;
         }
-        do_end_array(context);
+        more = visit_end_array(context, ec);
+
+        return more;
     }
 
-    void write_hexfloat_value(const string_view_type& sv, const ser_context& context)
+    bool write_hexfloat_value(const string_view_type& sv, const ser_context& context, std::error_code& ec)
     {
+        bool more = true;
+
         hexfloat_parse_state state = hexfloat_parse_state::start;
         std::basic_string<char> s;
         std::basic_string<char> exponent;
@@ -563,7 +644,10 @@ private:
                             state = hexfloat_parse_state::expect_x;
                             break;
                         default:
-                            throw std::invalid_argument("Invalid hexfloat string");
+                        {
+                            ec = cbor_errc::invalid_bigfloat;
+                            return false;
+                        }
                     }
                     break;
                 }
@@ -575,7 +659,10 @@ private:
                             state = hexfloat_parse_state::expect_x;
                             break;
                         default:
-                            throw std::invalid_argument("Invalid hexfloat string");
+                        {
+                            ec = cbor_errc::invalid_bigfloat;
+                            return false;
+                        }
                     }
                     break;
                 }
@@ -588,7 +675,10 @@ private:
                             state = hexfloat_parse_state::integer;
                             break;
                         default:
-                            throw std::invalid_argument("Invalid hexfloat string");
+                        {
+                            ec = cbor_errc::invalid_bigfloat;
+                            return false;
+                        }
                     }
                     break;
                 }
@@ -607,7 +697,10 @@ private:
                             state = hexfloat_parse_state::fraction1;
                             break;
                         default:
-                            throw std::invalid_argument("Invalid hexfloat string");
+                        {
+                            ec = cbor_errc::invalid_bigfloat;
+                            return false;
+                        }
                     }
                     break;
                 }
@@ -627,7 +720,10 @@ private:
                             state = hexfloat_parse_state::exp2;
                             break;
                         default:
-                            throw std::invalid_argument("Invalid hexfloat string");
+                        {
+                            ec = cbor_errc::invalid_bigfloat;
+                            return false;
+                        }
                     }
                     break;
                 }
@@ -639,7 +735,10 @@ private:
                             exponent.push_back(c);
                             break;
                         default:
-                            throw std::invalid_argument("Invalid hexfloat string");
+                        {
+                            ec = cbor_errc::invalid_bigfloat;
+                            return false;
+                        }
                     }
                     break;
                 }
@@ -652,89 +751,96 @@ private:
                             scale -= 4;
                             break;
                         default:
-                            throw std::invalid_argument("Invalid hexfloat string");
+                        {
+                            ec = cbor_errc::invalid_bigfloat;
+                            return false;
+                        }
                     }
                     break;
                 }
             }
         }
 
-        result_.push_back(0xc5);
-        do_begin_array((size_t)2, semantic_tag::none, context);
+        write_tag(5);
+        more = visit_begin_array((std::size_t)2, semantic_tag::none, context, ec);
+        if (!more) return more;
+
         if (exponent.length() > 0)
         {
-            auto result = jsoncons::detail::base16_to_integer<int64_t>(exponent.data(), exponent.length());
-            if (result.ec != jsoncons::detail::to_integer_errc())
+            auto sink = jsoncons::detail::base16_to_integer<int64_t>(exponent.data(), exponent.length());
+            if (!sink)
             {
-                JSONCONS_THROW(json_runtime_error<std::invalid_argument>(make_error_code(result.ec).message()));
+                ec = sink.error_code();
+                return false;
             }
-            scale += result.value;
+            scale += sink.value();
         }
-        do_int64_value(scale, semantic_tag::none, context);
+        more = visit_int64(scale, semantic_tag::none, context, ec);
+        if (!more) return more;
 
-        auto result = jsoncons::detail::base16_to_integer<int64_t>(s.data(),s.length());
-        if (result.ec == jsoncons::detail::to_integer_errc())
+        auto sink = jsoncons::detail::base16_to_integer<int64_t>(s.data(),s.length());
+        if (sink)
         {
-            do_int64_value(result.value, semantic_tag::none, context);
+            more = visit_int64(sink.value(), semantic_tag::none, context, ec);
+            if (!more) return more;
         }
-        else if (result.ec == jsoncons::detail::to_integer_errc::overflow)
+        else if (sink.error_code() == jsoncons::detail::to_integer_errc::overflow)
         {
-            bignum n(s.data(), s.length(), 16);
+            bigint n = bigint::from_string_radix(s.data(), s.length(), 16);
             write_bignum(n);
             end_value();
         }
         else
         {
-            JSONCONS_THROW(json_runtime_error<std::invalid_argument>(make_error_code(result.ec).message()));
+            JSONCONS_THROW(json_runtime_error<std::invalid_argument>(sink.error_code().message()));
         }
-        do_end_array(context);
+        return visit_end_array(context, ec);
     }
 
-    bool do_string_value(const string_view_type& sv, semantic_tag tag, const ser_context& context) override
+    bool visit_string(const string_view_type& sv, semantic_tag tag, const ser_context& context, std::error_code& ec) override
     {
         switch (tag)
         {
             case semantic_tag::bigint:
             {
-                bignum n(sv.data(), sv.length());
+                bigint n = bigint::from_string(sv.data(), sv.length());
                 write_bignum(n);
                 end_value();
                 break;
             }
             case semantic_tag::bigdec:
             {
-                write_decimal_value(sv, context);
-                break;
+                return write_decimal_value(sv, context, ec);
             }
             case semantic_tag::bigfloat:
             {
-                write_hexfloat_value(sv, context);
-                break;
+                return write_hexfloat_value(sv, context, ec);
             }
             case semantic_tag::datetime:
             {
-                result_.push_back(0xc0);
+                write_tag(0);
+
                 write_string(sv);
                 end_value();
                 break;
             }
             case semantic_tag::uri:
             {
-                result_.push_back(32);
+                write_tag(32);
                 write_string(sv);
                 end_value();
                 break;
             }
             case semantic_tag::base64url:
             {
-                result_.push_back(33);
+                write_tag(33);
                 write_string(sv);
                 end_value();
                 break;
             }
             case semantic_tag::base64:
             {
-                result_.push_back(34);
+                write_tag(34);
                 write_string(sv);
                 end_value();
                 break;
@@ -749,9 +855,10 @@ private:
         return true;
     }
 
-    bool do_byte_string_value(const byte_string_view& b, 
-                              semantic_tag tag, 
-                              const ser_context&) override
+    bool visit_byte_string(const byte_string_view& b, 
+                           semantic_tag tag, 
+                           const ser_context&,
+                           std::error_code&) override
     {
         byte_string_chars_format encoding_hint;
         switch (tag)
@@ -772,30 +879,29 @@ private:
         switch (encoding_hint)
         {
             case byte_string_chars_format::base64url:
-                result_.push_back(0xd5);
+                write_tag(21);
                 break;
             case byte_string_chars_format::base64:
-                result_.push_back(0xd6);
+                write_tag(22);
                 break;
             case byte_string_chars_format::base16:
-                result_.push_back(0xd7);
+                write_tag(23);
                 break;
             default:
                 break;
         }
-        if (options_.pack_strings() && b.length() >= jsoncons::cbor::detail::min_length_for_stringref(next_stringref_))
+        if (options_.pack_strings() && b.size() >= jsoncons::cbor::detail::min_length_for_stringref(next_stringref_))
         {
-            auto it = bytestringref_map_.find(byte_string(b));
+            byte_string_type bs(b.data(), b.size(), alloc_);
+            auto it = bytestringref_map_.find(bs);
             if (it == bytestringref_map_.end())
             {
-                bytestringref_map_.insert(std::make_pair(byte_string(b), next_stringref_++));
-                write_byte_string_value(b);
+                bytestringref_map_.emplace(std::make_pair(bs, next_stringref_++));
+                write_byte_string_value(bs);
             }
             else
             {
-                // tag(25)
-                result_.push_back(0xd8); 
-                result_.push_back(0x19); 
+                write_tag(25);
                 write_uint64_value(it->second);
             }
         }
@@ -808,70 +914,102 @@ private:
         return true;
     }
 
+    bool visit_byte_string(const byte_string_view& b, 
+                           uint64_t ext_tag, 
+                           const ser_context&,
+                           std::error_code&) override
+    {
+        if (options_.pack_strings() && b.size() >= jsoncons::cbor::detail::min_length_for_stringref(next_stringref_))
+        {
+            byte_string_type bs(b.data(), b.size(), alloc_);
+            auto it = bytestringref_map_.find(bs);
+            if (it == bytestringref_map_.end())
+            {
+                bytestringref_map_.emplace(std::make_pair(bs, next_stringref_++));
+                write_tag(ext_tag);
+                write_byte_string_value(bs);
+            }
+            else
+            {
+                write_tag(25);
+                write_uint64_value(it->second);
+            }
+        }
+        else
+        {
+            write_tag(ext_tag);
+            write_byte_string_value(b);
+        }
+
+        end_value();
+        return true;
+    }
+
     void write_byte_string_value(const byte_string_view& b) 
     {
-        if (b.length() <= 0x17)
+        if (b.size() <= 0x17)
         {
             // fixstr stores a byte array whose length is upto 31 bytes
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x40 + b.length()), 
-                                            std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0x40 + b.size()), 
+                                            std::back_inserter(sink_));
         }
-        else if (b.length() <= 0xff)
+        else if (b.size() <= 0xff)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x58), 
-                                            std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(b.length()), 
-                                            std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0x58), 
+                                            std::back_inserter(sink_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(b.size()), 
+                                            std::back_inserter(sink_));
         }
-        else if (b.length() <= 0xffff)
+        else if (b.size() <= 0xffff)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x59), 
-                                            std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint16_t>(b.length()), 
-                                            std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0x59), 
+                                            std::back_inserter(sink_));
+            jsoncons::detail::native_to_big(static_cast<uint16_t>(b.size()), 
+                                            std::back_inserter(sink_));
         }
-        else if (b.length() <= 0xffffffff)
+        else if (b.size() <= 0xffffffff)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x5a), 
-                                            std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint32_t>(b.length()), 
-                                            std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0x5a), 
+                                            std::back_inserter(sink_));
+            jsoncons::detail::native_to_big(static_cast<uint32_t>(b.size()), 
+                                            std::back_inserter(sink_));
         }
-        else if (b.length() <= 0xffffffffffffffff)
+        else // if (b.size() <= 0xffffffffffffffff)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x5b), 
-                                            std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint64_t>(b.length()), 
-                                            std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0x5b), 
+                                            std::back_inserter(sink_));
+            jsoncons::detail::native_to_big(static_cast<uint64_t>(b.size()), 
+                                            std::back_inserter(sink_));
         }
 
         for (auto c : b)
         {
-            result_.push_back(c);
+            sink_.push_back(c);
         }
     }
 
-    bool do_double_value(double val, 
+    bool visit_double(double val, 
                          semantic_tag tag,
-                         const ser_context&) override
+                         const ser_context&,
+                         std::error_code&) override
     {
-        if (tag == semantic_tag::timestamp)
+        if (tag == semantic_tag::epoch_time)
         {
-            result_.push_back(0xc1);
+            write_tag(1);
         }
 
         float valf = (float)val;
         if ((double)valf == val)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0xfa), 
-                                  std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(valf, std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0xfa), 
+                                  std::back_inserter(sink_));
+            jsoncons::detail::native_to_big(valf, std::back_inserter(sink_));
         }
         else
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0xfb), 
-                                  std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(val, std::back_inserter(result_));
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(0xfb), 
+                                  std::back_inserter(sink_));
+            jsoncons::detail::native_to_big(val, std::back_inserter(sink_));
         }
 
         // write double
@@ -880,97 +1018,99 @@ private:
         return true;
     }
 
-    bool do_int64_value(int64_t value, 
+    bool visit_int64(int64_t value, 
                         semantic_tag tag, 
-                        const ser_context&) override
+                        const ser_context&,
+                        std::error_code&) override
     {
-        if (tag == semantic_tag::timestamp)
+        if (tag == semantic_tag::epoch_time)
         {
-            result_.push_back(0xc1);
+            write_tag(1);
         }
         if (value >= 0)
         {
             if (value <= 0x17)
             {
-                jsoncons::detail::to_big_endian(static_cast<uint8_t>(value), 
-                                  std::back_inserter(result_));
+                jsoncons::detail::native_to_big(static_cast<uint8_t>(value), 
+                                  std::back_inserter(sink_));
             } 
             else if (value <= (std::numeric_limits<uint8_t>::max)())
             {
-                jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x18), 
-                                  std::back_inserter(result_));
-                jsoncons::detail::to_big_endian(static_cast<uint8_t>(value), 
-                                  std::back_inserter(result_));
+                jsoncons::detail::native_to_big(static_cast<uint8_t>(0x18), 
+                                  std::back_inserter(sink_));
+                jsoncons::detail::native_to_big(static_cast<uint8_t>(value), 
+                                  std::back_inserter(sink_));
             } 
             else if (value <= (std::numeric_limits<uint16_t>::max)())
             {
-                jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x19), 
-                                  std::back_inserter(result_));
-                jsoncons::detail::to_big_endian(static_cast<uint16_t>(value), 
-                                  std::back_inserter(result_));
+                jsoncons::detail::native_to_big(static_cast<uint8_t>(0x19), 
+                                  std::back_inserter(sink_));
+                jsoncons::detail::native_to_big(static_cast<uint16_t>(value), 
+                                  std::back_inserter(sink_));
             } 
             else if (value <= (std::numeric_limits<uint32_t>::max)())
             {
-                jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x1a), 
-                                  std::back_inserter(result_));
-                jsoncons::detail::to_big_endian(static_cast<uint32_t>(value), 
-                                  std::back_inserter(result_));
+                jsoncons::detail::native_to_big(static_cast<uint8_t>(0x1a), 
+                                  std::back_inserter(sink_));
+                jsoncons::detail::native_to_big(static_cast<uint32_t>(value), 
+                                  std::back_inserter(sink_));
             } 
             else if (value <= (std::numeric_limits<int64_t>::max)())
             {
-                jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x1b), 
-                                  std::back_inserter(result_));
-                jsoncons::detail::to_big_endian(static_cast<int64_t>(value), 
-                                  std::back_inserter(result_));
+                jsoncons::detail::native_to_big(static_cast<uint8_t>(0x1b), 
+                                  std::back_inserter(sink_));
+                jsoncons::detail::native_to_big(static_cast<int64_t>(value), 
+                                  std::back_inserter(sink_));
             }
         } else
         {
             const auto posnum = -1 - value;
             if (value >= -24)
             {
-                jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x20 + posnum), 
-                                  std::back_inserter(result_));
+                jsoncons::detail::native_to_big(static_cast<uint8_t>(0x20 + posnum), 
+                                  std::back_inserter(sink_));
             } 
             else if (posnum <= (std::numeric_limits<uint8_t>::max)())
             {
-                jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x38), 
-                                  std::back_inserter(result_));
-                jsoncons::detail::to_big_endian(static_cast<uint8_t>(posnum), 
-                                  std::back_inserter(result_));
+                jsoncons::detail::native_to_big(static_cast<uint8_t>(0x38), 
+                                  std::back_inserter(sink_));
+                jsoncons::detail::native_to_big(static_cast<uint8_t>(posnum), 
+                                  std::back_inserter(sink_));
             } 
             else if (posnum <= (std::numeric_limits<uint16_t>::max)())
             {
-                jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x39), 
-                                  std::back_inserter(result_));
-                jsoncons::detail::to_big_endian(static_cast<uint16_t>(posnum), 
-                                  std::back_inserter(result_));
+                jsoncons::detail::native_to_big(static_cast<uint8_t>(0x39), 
+                                  std::back_inserter(sink_));
+                jsoncons::detail::native_to_big(static_cast<uint16_t>(posnum), 
+                                  std::back_inserter(sink_));
             } 
             else if (posnum <= (std::numeric_limits<uint32_t>::max)())
             {
-                jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x3a), 
-                                  std::back_inserter(result_));
-                jsoncons::detail::to_big_endian(static_cast<uint32_t>(posnum), 
-                                  std::back_inserter(result_));
+                jsoncons::detail::native_to_big(static_cast<uint8_t>(0x3a), 
+                                  std::back_inserter(sink_));
+                jsoncons::detail::native_to_big(static_cast<uint32_t>(posnum), 
+                                  std::back_inserter(sink_));
             } 
             else if (posnum <= (std::numeric_limits<int64_t>::max)())
             {
-                jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x3b), 
-                                  std::back_inserter(result_));
-                jsoncons::detail::to_big_endian(static_cast<int64_t>(posnum), 
-                                  std::back_inserter(result_));
+                jsoncons::detail::native_to_big(static_cast<uint8_t>(0x3b), 
+                                  std::back_inserter(sink_));
+                jsoncons::detail::native_to_big(static_cast<int64_t>(posnum), 
+                                  std::back_inserter(sink_));
             }
         }
         end_value();
         return true;
     }
 
-    bool do_uint64_value(uint64_t value, 
+    bool visit_uint64(uint64_t value, 
                          semantic_tag tag, 
-                         const ser_context&) override
+                         const ser_context&,
+                         std::error_code&) override
     {
-        if (tag == semantic_tag::timestamp)
+        if (tag == semantic_tag::epoch_time)
         {
-            result_.push_back(0xc1);
+            write_tag(1);
         }
 
         write_uint64_value(value);
@@ -978,56 +1118,574 @@ private:
         return true;
     }
 
+    void write_tag(uint64_t value)
+    {
+        if (value <= 0x17)
+        {
+            sink_.push_back(0xc0 | static_cast<uint8_t>(value)); 
+        } 
+        else if (value <=(std::numeric_limits<uint8_t>::max)())
+        {
+            sink_.push_back(0xd8);
+            sink_.push_back(static_cast<uint8_t>(value));
+        } 
+        else if (value <=(std::numeric_limits<uint16_t>::max)())
+        {
+            sink_.push_back(0xd9);
+            jsoncons::detail::native_to_big(static_cast<uint16_t>(value), 
+                                            std::back_inserter(sink_));
+        }
+        else if (value <=(std::numeric_limits<uint32_t>::max)())
+        {
+            sink_.push_back(0xda);
+            jsoncons::detail::native_to_big(static_cast<uint32_t>(value), 
+                                            std::back_inserter(sink_));
+        }
+        else 
+        {
+            sink_.push_back(0xdb);
+            jsoncons::detail::native_to_big(static_cast<uint64_t>(value), 
+                                            std::back_inserter(sink_));
+        }
+    }
+
     void write_uint64_value(uint64_t value) 
     {
         if (value <= 0x17)
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(value), 
-                                            std::back_inserter(result_));
+            sink_.push_back(static_cast<uint8_t>(value));
         } 
         else if (value <=(std::numeric_limits<uint8_t>::max)())
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x18), 
-                                            std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(value), 
-                                            std::back_inserter(result_));
+            sink_.push_back(static_cast<uint8_t>(0x18));
+            sink_.push_back(static_cast<uint8_t>(value));
         } 
         else if (value <=(std::numeric_limits<uint16_t>::max)())
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x19), 
-                                            std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint16_t>(value), 
-                                            std::back_inserter(result_));
+            sink_.push_back(static_cast<uint8_t>(0x19));
+            jsoncons::detail::native_to_big(static_cast<uint16_t>(value), 
+                                            std::back_inserter(sink_));
         } 
         else if (value <=(std::numeric_limits<uint32_t>::max)())
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x1a), 
-                                            std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint32_t>(value), 
-                                            std::back_inserter(result_));
+            sink_.push_back(static_cast<uint8_t>(0x1a));
+            jsoncons::detail::native_to_big(static_cast<uint32_t>(value), 
+                                            std::back_inserter(sink_));
         } 
         else if (value <=(std::numeric_limits<uint64_t>::max)())
         {
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(0x1b), 
-                                            std::back_inserter(result_));
-            jsoncons::detail::to_big_endian(static_cast<uint64_t>(value), 
-                                            std::back_inserter(result_));
+            sink_.push_back(static_cast<uint8_t>(0x1b));
+            jsoncons::detail::native_to_big(static_cast<uint64_t>(value), 
+                                            std::back_inserter(sink_));
         }
     }
 
-    bool do_bool_value(bool value, semantic_tag, const ser_context&) override
+    bool visit_bool(bool value, semantic_tag, const ser_context&, std::error_code&) override
     {
         if (value)
         {
-            result_.push_back(0xf5);
+            sink_.push_back(0xf5);
         }
         else
         {
-            result_.push_back(0xf4);
+            sink_.push_back(0xf4);
         }
 
         end_value();
         return true;
+    }
+
+    bool visit_typed_array(const span<const uint8_t>& v, 
+                        semantic_tag tag,
+                        const ser_context& context, 
+                        std::error_code& ec) override
+    {
+        if (options_.use_typed_arrays())
+        {
+            switch (tag)
+            {
+                case semantic_tag::clamped:
+                    write_tag(0x44);
+                    break;
+                default:
+                    write_tag(0x40);
+                    break;
+            }
+            write_byte_string_value(byte_string_view(v));
+            return true;
+        }
+        else
+        {
+            bool more = this->begin_array(v.size(), semantic_tag::none, context, ec);
+            for (auto p = v.begin(); more && p != v.end(); ++p)
+            {
+                more = this->uint64_value(*p, tag, context, ec);
+            }
+            if (more)
+            {
+                more = this->end_array(context, ec);
+            }
+            return more;
+        }
+    }
+
+    bool visit_typed_array(const span<const uint16_t>& data,  
+                        semantic_tag tag,
+                        const ser_context& context, 
+                        std::error_code& ec) override
+    {
+        if (options_.use_typed_arrays())
+        {
+            write_typed_array_tag(std::integral_constant<bool, jsoncons::endian::native == jsoncons::endian::big>(), 
+                                  uint16_t(), 
+                                  tag);
+            std::vector<uint8_t> v(data.size()*sizeof(uint16_t));
+            memcpy(v.data(),data.data(),data.size()*sizeof(uint16_t));
+            write_byte_string_value(byte_string_view(v));
+            return true;
+        }
+        else
+        {
+            bool more = this->begin_array(data.size(), semantic_tag::none, context, ec);
+            for (auto p = data.begin(); more && p != data.end(); ++p)
+            {
+                more = this->uint64_value(*p, tag, context, ec);
+            }
+            if (more)
+            {
+                more = this->end_array(context, ec);
+            }
+            return more;
+        }
+    }
+
+    bool visit_typed_array(const span<const uint32_t>& data,  
+                        semantic_tag tag,
+                        const ser_context& context, 
+                        std::error_code& ec) override
+    {
+        if (options_.use_typed_arrays())
+        {
+            write_typed_array_tag(std::integral_constant<bool, jsoncons::endian::native == jsoncons::endian::big>(), 
+                                  uint32_t(), 
+                                  tag);
+            std::vector<uint8_t> v(data.size()*sizeof(uint32_t));
+            memcpy(v.data(), data.data(), data.size()*sizeof(uint32_t));
+            write_byte_string_value(byte_string_view(v));
+            return true;
+        }
+        else
+        {
+            bool more = this->begin_array(data.size(), semantic_tag::none, context, ec);
+            for (auto p = data.begin(); more && p != data.end(); ++p)
+            {
+                more = this->uint64_value(*p, semantic_tag::none, context, ec);
+            }
+            if (more)
+            {
+                more = this->end_array(context, ec);
+            }
+            return more;
+        }
+    }
+
+    bool visit_typed_array(const span<const uint64_t>& data,  
+                        semantic_tag tag,
+                        const ser_context& context, 
+                        std::error_code& ec) override
+    {
+        if (options_.use_typed_arrays())
+        {
+            write_typed_array_tag(std::integral_constant<bool, jsoncons::endian::native == jsoncons::endian::big>(), 
+                                  uint64_t(), 
+                                  tag);
+            std::vector<uint8_t> v(data.size()*sizeof(uint64_t));
+            memcpy(v.data(), data.data(), data.size()*sizeof(uint64_t));
+            write_byte_string_value(byte_string_view(v));
+            return true;
+        }
+        else
+        {
+            bool more = this->begin_array(data.size(), semantic_tag::none, context, ec);
+            for (auto p = data.begin(); more && p != data.end(); ++p)
+            {
+                more = this->uint64_value(*p,semantic_tag::none,context, ec);
+            }
+            if (more)
+            {
+                more = this->end_array(context, ec);
+            }
+            return more;
+        }
+    }
+
+    bool visit_typed_array(const span<const int8_t>& data,  
+                        semantic_tag,
+                        const ser_context& context, 
+                        std::error_code& ec) override
+    {
+        if (options_.use_typed_arrays())
+        {
+            write_tag(0x48);
+            std::vector<uint8_t> v(data.size()*sizeof(int8_t));
+            memcpy(v.data(), data.data(), data.size()*sizeof(int8_t));
+            write_byte_string_value(byte_string_view(v));
+            return true;
+        }
+        else
+        {
+            bool more = this->begin_array(data.size(), semantic_tag::none,context, ec);
+            for (auto p = data.begin(); more && p != data.end(); ++p)
+            {
+                more = this->int64_value(*p,semantic_tag::none,context, ec);
+            }
+            if (more)
+            {
+                more = this->end_array(context, ec);
+            }
+            return more;
+        }
+    }
+
+    bool visit_typed_array(const span<const int16_t>& data,  
+                        semantic_tag tag,
+                        const ser_context& context, 
+                        std::error_code& ec) override
+    {
+        if (options_.use_typed_arrays())
+        {
+            write_typed_array_tag(std::integral_constant<bool, jsoncons::endian::native == jsoncons::endian::big>(), 
+                                  int16_t(), 
+                                  tag);
+            std::vector<uint8_t> v(data.size()*sizeof(int16_t));
+            memcpy(v.data(), data.data(), data.size()*sizeof(int16_t));
+            write_byte_string_value(byte_string_view(v));
+            return true;
+        }
+        else
+        {
+            bool more = this->begin_array(data.size(), semantic_tag::none,context, ec);
+            for (auto p = data.begin(); more && p != data.end(); ++p)
+            {
+                more = this->int64_value(*p,semantic_tag::none,context, ec);
+            }
+            if (more)
+            {
+                more = this->end_array(context, ec);
+            }
+            return more;
+        }
+    }
+
+    bool visit_typed_array(const span<const int32_t>& data,  
+                        semantic_tag tag,
+                        const ser_context& context, 
+                        std::error_code& ec) override
+    {
+        if (options_.use_typed_arrays())
+        {
+            write_typed_array_tag(std::integral_constant<bool, jsoncons::endian::native == jsoncons::endian::big>(), 
+                                  int32_t(), 
+                                  tag);
+            std::vector<uint8_t> v(data.size()*sizeof(int32_t));
+            memcpy(v.data(), data.data(), data.size()*sizeof(int32_t));
+            write_byte_string_value(byte_string_view(v));
+            return true;
+        }
+        else
+        {
+            bool more = this->begin_array(data.size(), semantic_tag::none,context, ec);
+            for (auto p = data.begin(); more && p != data.end(); ++p)
+            {
+                more = this->int64_value(*p,semantic_tag::none,context, ec);
+            }
+            if (more)
+            {
+                more = this->end_array(context, ec);
+            }
+            return more;
+        }
+    }
+
+    bool visit_typed_array(const span<const int64_t>& data,  
+                        semantic_tag tag,
+                        const ser_context& context, 
+                        std::error_code& ec) override
+    {
+        if (options_.use_typed_arrays())
+        {
+            write_typed_array_tag(std::integral_constant<bool, jsoncons::endian::native == jsoncons::endian::big>(), 
+                                  int64_t(), 
+                                  tag);
+            std::vector<uint8_t> v(data.size()*sizeof(int64_t));
+            memcpy(v.data(), data.data(), data.size()*sizeof(int64_t));
+            write_byte_string_value(byte_string_view(v));
+            return true;
+        }
+        else
+        {
+            bool more = this->begin_array(data.size(), semantic_tag::none,context, ec);
+            for (auto p = data.begin(); more && p != data.end(); ++p)
+            {
+                more = this->int64_value(*p,semantic_tag::none,context, ec);
+            }
+            if (more)
+            {
+                more = this->end_array(context, ec);
+            }
+            return more;
+        }
+    }
+
+    bool visit_typed_array(half_arg_t, const span<const uint16_t>& data,  
+                        semantic_tag tag,
+                        const ser_context& context, 
+                        std::error_code& ec) override
+    {
+        if (options_.use_typed_arrays())
+        {
+            write_typed_array_tag(std::integral_constant<bool, jsoncons::endian::native == jsoncons::endian::big>(), 
+                                  half_arg, 
+                                  tag);
+            std::vector<uint8_t> v(data.size()*sizeof(uint16_t));
+            memcpy(v.data(),data.data(),data.size()*sizeof(uint16_t));
+            write_byte_string_value(byte_string_view(v));
+            return true;
+        }
+        else
+        {
+            bool more = this->begin_array(data.size(), semantic_tag::none, context, ec);
+            for (auto p = data.begin(); more && p != data.end(); ++p)
+            {
+                more = this->half_value(*p, tag, context, ec);
+            }
+            if (more)
+            {
+                more = this->end_array(context, ec);
+            }
+            return more;
+        }
+    }
+
+    bool visit_typed_array(const span<const float>& data,  
+                        semantic_tag tag,
+                        const ser_context& context, 
+                        std::error_code& ec) override
+    {
+        if (options_.use_typed_arrays())
+        {
+            write_typed_array_tag(std::integral_constant<bool, jsoncons::endian::native == jsoncons::endian::big>(), 
+                                  float(), 
+                                  tag);
+            std::vector<uint8_t> v(data.size()*sizeof(float));
+            memcpy(v.data(), data.data(), data.size()*sizeof(float));
+            write_byte_string_value(byte_string_view(v));
+            return true;
+        }
+        else
+        {
+            bool more = this->begin_array(data.size(), semantic_tag::none,context, ec);
+            for (auto p = data.begin(); more && p != data.end(); ++p)
+            {
+                more = this->double_value(*p,semantic_tag::none,context, ec);
+            }
+            if (more)
+            {
+                more = this->end_array(context, ec);
+            }
+            return more;
+        }
+    }
+
+    bool visit_typed_array(const span<const double>& data,  
+                        semantic_tag tag,
+                        const ser_context& context, 
+                        std::error_code& ec) override
+    {
+        if (options_.use_typed_arrays())
+        {
+            write_typed_array_tag(std::integral_constant<bool, jsoncons::endian::native == jsoncons::endian::big>(), 
+                                  double(), 
+                                  tag);
+            std::vector<uint8_t> v(data.size()*sizeof(double));
+            memcpy(v.data(), data.data(), data.size()*sizeof(double));
+            write_byte_string_value(byte_string_view(v));
+            return true;
+        }
+        else
+        {
+            bool more = this->begin_array(data.size(), semantic_tag::none,context, ec);
+            for (auto p = data.begin(); more && p != data.end(); ++p)
+            {
+                more = this->double_value(*p,semantic_tag::none,context, ec);
+            }
+            if (more)
+            {
+                more = this->end_array(context, ec);
+            }
+            return more;
+        }
+    }
+/*
+    bool visit_typed_array(const span<const float128_type>&, 
+                        semantic_tag,
+                        const ser_context&, 
+                        std::error_code&) override
+    {
+        return true;
+    }
+*/
+    bool visit_begin_multi_dim(const span<const size_t>& shape,
+                            semantic_tag tag,
+                            const ser_context& context, 
+                            std::error_code& ec) override
+    {
+        switch (tag)
+        {
+            case semantic_tag::multi_dim_column_major:
+                write_tag(1040);
+                break;
+            default:
+                write_tag(40);
+                break;
+        }
+        bool more = visit_begin_array(2, semantic_tag::none, context, ec);
+        more = visit_begin_array(shape.size(), semantic_tag::none, context, ec);
+        for (auto it = shape.begin(); more && it != shape.end(); ++it)
+        {
+            more = visit_uint64(*it, semantic_tag::none, context, ec);
+        }
+        if (more)
+        {
+            more = visit_end_array(context, ec);
+        }
+        return more;
+    }
+
+    bool visit_end_multi_dim(const ser_context& context,
+                          std::error_code& ec) override
+    {
+        bool more = visit_end_array(context, ec);
+        return more;
+    }
+
+    void write_typed_array_tag(std::true_type, 
+                               uint16_t,
+                               semantic_tag)
+    {
+        write_tag(0x41); // big endian
+    }
+    void write_typed_array_tag(std::false_type,
+                               uint16_t,
+                               semantic_tag)
+    {
+        write_tag(0x45);
+    }
+
+    void write_typed_array_tag(std::true_type, 
+                               uint32_t,
+                               semantic_tag)
+    {
+        write_tag(0x42); // big endian
+    }
+    void write_typed_array_tag(std::false_type,
+                               uint32_t,
+                               semantic_tag)
+    {
+        write_tag(0x46);  // little endian
+    }
+
+    void write_typed_array_tag(std::true_type, 
+                               uint64_t,
+                               semantic_tag)
+    {
+        write_tag(0x43); // big endian
+    }
+    void write_typed_array_tag(std::false_type,
+                               uint64_t,
+                               semantic_tag)
+    {
+        write_tag(0x47);  // little endian
+    }
+
+    void write_typed_array_tag(std::true_type, 
+                               int16_t,
+                               semantic_tag)
+    {
+        write_tag(0x49); // big endian
+    }
+    void write_typed_array_tag(std::false_type,
+                               int16_t,
+                               semantic_tag)
+    {
+        write_tag(0x4d);  // little endian
+    }
+
+    void write_typed_array_tag(std::true_type, 
+                               int32_t,
+                               semantic_tag)
+    {
+        write_tag(0x4a); // big endian
+    }
+    void write_typed_array_tag(std::false_type,
+                               int32_t,
+                               semantic_tag)
+    {
+        write_tag(0x4e);  // little endian
+    }
+
+    void write_typed_array_tag(std::true_type, 
+                               int64_t,
+                               semantic_tag)
+    {
+        write_tag(0x4b); // big endian
+    }
+    void write_typed_array_tag(std::false_type,
+                               int64_t,
+                               semantic_tag)
+    {
+        write_tag(0x4f);  // little endian
+    }
+
+    void write_typed_array_tag(std::true_type, 
+                               half_arg_t,
+                               semantic_tag)
+    {
+        write_tag(0x50);
+    }
+    void write_typed_array_tag(std::false_type,
+                               half_arg_t,
+                               semantic_tag)
+    {
+        write_tag(0x54);
+    }
+                        
+    void write_typed_array_tag(std::true_type, 
+                               float,
+                               semantic_tag)
+    {
+        write_tag(0x51); // big endian
+    }
+    void write_typed_array_tag(std::false_type,
+                               float,
+                               semantic_tag)
+    {
+        write_tag(0x55);  // little endian
+    }
+
+    void write_typed_array_tag(std::true_type, 
+                               double,
+                               semantic_tag)
+    {
+        std::cout << "write_typed_array_tag big\n";
+        write_tag(0x52); // big endian
+    }
+    void write_typed_array_tag(std::false_type,
+                               double,
+                               semantic_tag)
+    {
+        std::cout << "write_typed_array_tag little\n";
+        write_tag(0x56);  // little endian
     }
 
     void end_value()
@@ -1039,14 +1697,14 @@ private:
     }
 };
 
-typedef basic_cbor_encoder<jsoncons::binary_stream_result> cbor_stream_encoder;
-typedef basic_cbor_encoder<jsoncons::bytes_result> cbor_bytes_encoder;
+using cbor_stream_encoder = basic_cbor_encoder<jsoncons::binary_stream_sink>;
+using cbor_bytes_encoder = basic_cbor_encoder<jsoncons::bytes_sink<std::vector<uint8_t>>>;
 
 #if !defined(JSONCONS_NO_DEPRECATED)
 JSONCONS_DEPRECATED_MSG("Instead, use cbor_bytes_encoder") typedef cbor_bytes_encoder cbor_bytes_serializer;
 
-template<class Result=jsoncons::binary_stream_result>
-using basic_cbor_serializer = basic_cbor_encoder<Result>; 
+template<class Sink=jsoncons::binary_stream_sink>
+using basic_cbor_serializer = basic_cbor_encoder<Sink>; 
 
 JSONCONS_DEPRECATED_MSG("Instead, use cbor_stream_encoder") typedef cbor_stream_encoder cbor_encoder;
 JSONCONS_DEPRECATED_MSG("Instead, use cbor_stream_encoder") typedef cbor_stream_encoder cbor_serializer;

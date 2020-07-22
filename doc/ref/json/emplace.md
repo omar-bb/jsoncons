@@ -24,12 +24,12 @@ Array iterator pointing to the emplaced value.
 
 #### Exceptions
 
-Throws `std::runtime_error` if not a json array.
+Throws `std::domain_error` if not a json array.
 
 ### Example
 
 ```c++
-json a = json::array();
+json a(json_array_arg);
 a.emplace_back("Toronto");
 a.emplace_back("Vancouver");
 a.emplace(a.array_range().begin(),"Montreal");

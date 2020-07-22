@@ -11,29 +11,29 @@ The class `json` is an instantiation of the [basic_json](basic_json.md) class te
 The order of an object's name/value pairs is not preserved, they are sorted alphabetically by name. 
 If you want to preserve the original insertion order, use [ojson](ojson.md) instead.
 
-#### See also
+### See also
 
-- [ojson](ojson.md) constructs a utf8 character json value that preserves the original insertion order of an object's name/value pairs
+[ojson](ojson.md) constructs a utf8 character json value that preserves the original insertion order of an object's name/value pairs  
 
-- [wjson](wjson.md) constructs a wide character json value that sorts name-value members alphabetically
+[wjson](wjson.md) constructs a wide character json value that sorts name-value members alphabetically  
 
-- [wojson](wojson.md) constructs a wide character json value that preserves the original insertion order of an object's name/value pairs
+[wojson](wojson.md) constructs a wide character json value that preserves the original insertion order of an object's name/value pairs  
 
 
 ### Examples
   
 #### Accessors and defaults
 ```c++
-basic_json val;
+json j;
 
-val["field1"] = 1;
-val["field3"] = "Toronto";
+j["field1"] = 1;
+j["field3"] = "Toronto";
 
-double x1 = obj.contains("field1") ? val["field1"].as<double>() : 10.0;
-double x2 = obj.contains("field2") ? val["field2"].as<double>() : 20.0;
+double x1 = obj.contains("field1") ? j["field1"].as<double>() : 10.0;
+double x2 = obj.contains("field2") ? j["field2"].as<double>() : 20.0;
 
-std::string x3 = obj.get_with_default("field3","Montreal");
-std::string x4 = obj.get_with_default("field4","San Francisco");
+std::string x3 = obj.get_value_or<std::string>("field3","Montreal");
+std::string x4 = obj.get_value_or<std::string>("field4","San Francisco");
 
 std::cout << "x1=" << x1 << '\n';
 std::cout << "x2=" << x2 << '\n';
@@ -49,34 +49,34 @@ x4=San Francisco
 ```
 #### Nulls
 ```c++
-basic_json obj;
-obj["field1"] = basic_json::null();
-std::cout << obj << std::endl;
+json j;
+j["field1"] = json::null();
+std::cout << j << std::endl;
 ```
 Output: 
-```basic_json
+```json
 {"field1":null}
 ```
-#### Constructing basic_json structures
+#### Constructing json structures
 ```c++
-basic_json root;
+json doc;
 
-root["persons"] = basic_json::array();
+doc["persons"] = json(json_array_arg);
 
-basic_json person;
+json person;
 person["first_name"] = "John";
 person["last_name"] = "Smith";
 person["birth_date"] = "1972-01-30";
 
-basic_json address;
+json address;
 address["city"] = "Toronto";
 address["country"] = "Canada";
 
 person["address"] = std::move(address);
 
-root["persons"].push_back(std::move(person));
+doc["persons"].push_back(std::move(person));
 
-std::cout << pretty_print(root) << std::endl;
+std::cout << pretty_print(doc) << std::endl;
 ```
 Output:
 ```c++

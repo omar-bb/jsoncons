@@ -8,7 +8,6 @@
 #define JSONCONS_JSONPOINTER_JSONPATCH_HPP
 
 #include <string>
-#include <sstream>
 #include <vector> 
 #include <memory>
 #include <algorithm> // std::min
@@ -21,16 +20,16 @@ namespace jsoncons { namespace jsonpatch {
 
 namespace detail {
 
-    JSONCONS_STRING_LITERAL(test,'t','e','s','t')
-    JSONCONS_STRING_LITERAL(add,'a','d','d')
-    JSONCONS_STRING_LITERAL(remove,'r','e','m','o','v','e')
-    JSONCONS_STRING_LITERAL(replace,'r','e','p','l','a','c','e')
-    JSONCONS_STRING_LITERAL(move,'m','o','v','e')
-    JSONCONS_STRING_LITERAL(copy,'c','o','p','y')
-    JSONCONS_STRING_LITERAL(op,'o','p')
-    JSONCONS_STRING_LITERAL(path,'p','a','t','h')
-    JSONCONS_STRING_LITERAL(from,'f','r','o','m')
-    JSONCONS_STRING_LITERAL(value,'v','a','l','u','e')
+    JSONCONS_STRING_LITERAL(test_literal,'t','e','s','t')
+    JSONCONS_STRING_LITERAL(add_literal,'a','d','d')
+    JSONCONS_STRING_LITERAL(remove_literal,'r','e','m','o','v','e')
+    JSONCONS_STRING_LITERAL(replace_literal,'r','e','p','l','a','c','e')
+    JSONCONS_STRING_LITERAL(move_literal,'m','o','v','e')
+    JSONCONS_STRING_LITERAL(copy_literal,'c','o','p','y')
+    JSONCONS_STRING_LITERAL(op_literal,'o','p')
+    JSONCONS_STRING_LITERAL(path_literal,'p','a','t','h')
+    JSONCONS_STRING_LITERAL(from_literal,'f','r','o','m')
+    JSONCONS_STRING_LITERAL(value_literal,'v','a','l','u','e')
 
     enum class op_type {add,remove,replace};
     enum class state_type {begin,abort,commit};
@@ -38,9 +37,9 @@ namespace detail {
     template <class Json>
     struct operation_unwinder
     {
-        typedef typename Json::char_type char_type;
-        typedef std::basic_string<char_type> string_type;
-        typedef typename Json::string_view_type string_view_type;
+        using char_type = typename Json::char_type;
+        using string_type = std::basic_string<char_type>;
+        using string_view_type = typename Json::string_view_type;
 
         struct entry
         {
@@ -58,7 +57,7 @@ namespace detail {
         {
         }
 
-        ~operation_unwinder()
+        ~operation_unwinder() noexcept
         {
             std::error_code ec;
             //std::cout << "state: " << std::boolalpha << (state == state_type::commit) << ", stack size: " << stack.size() << std::endl;
@@ -68,7 +67,7 @@ namespace detail {
                 {
                     if (it->op == op_type::add)
                     {
-                        jsonpointer::insert_or_assign(target,it->path,it->value,ec);
+                        jsonpointer::add(target,it->path,it->value,ec);
                         if (ec)
                         {
                             //std::cout << "add: " << it->path << std::endl;
@@ -101,7 +100,7 @@ namespace detail {
     template <class Json>
     Json from_diff(const Json& source, const Json& target, const typename Json::string_view_type& path)
     {
-        typedef typename Json::char_type char_type;
+        using char_type = typename Json::char_type;
 
         Json result = typename Json::array();
 
@@ -112,34 +111,37 @@ namespace detail {
 
         if (source.is_array() && target.is_array())
         {
-            size_t common = (std::min)(source.size(),target.size());
-            for (size_t i = 0; i < common; ++i)
+            std::size_t common = (std::min)(source.size(),target.size());
+            for (std::size_t i = 0; i < common; ++i)
             {
-                std::basic_ostringstream<char_type> ss; 
-                ss << path << '/' << i;
-                auto temp_diff = from_diff(source[i],target[i],ss.str());
+                std::basic_string<char_type> ss(path); 
+                ss.push_back('/');
+                jsoncons::detail::write_integer(i,ss);
+                auto temp_diff = from_diff(source[i],target[i],ss);
                 result.insert(result.array_range().end(),temp_diff.array_range().begin(),temp_diff.array_range().end());
             }
             // Element in source, not in target - remove
-            for (size_t i = target.size(); i < source.size(); ++i)
+            for (std::size_t i = source.size(); i-- > target.size();)
             {
-                std::basic_ostringstream<char_type> ss; 
-                ss << path << '/' << i;
-                Json val = typename Json::object();
+                std::basic_string<char_type> ss(path); 
+                ss.push_back('/');
+                jsoncons::detail::write_integer(i,ss);
+                Json val(json_object_arg);
                 val.insert_or_assign(op_literal<char_type>(), remove_literal<char_type>());
-                val.insert_or_assign(path_literal<char_type>(), ss.str());
+                val.insert_or_assign(path_literal<char_type>(), ss);
                 result.push_back(std::move(val));
             }
             // Element in target, not in source - add, 
             // Fix contributed by Alexander rog13
-            for (size_t i = source.size(); i < target.size(); ++i)
+            for (std::size_t i = source.size(); i < target.size(); ++i)
             {
                 const auto& a = target[i];
-                std::basic_ostringstream<char_type> ss; 
-                ss << path << '/' << i;
-                Json val = typename Json::object();
+                std::basic_string<char_type> ss(path); 
+                ss.push_back('/');
+                jsoncons::detail::write_integer(i,ss);
+                Json val(json_object_arg);
                 val.insert_or_assign(op_literal<char_type>(), add_literal<char_type>());
-                val.insert_or_assign(path_literal<char_type>(), ss.str());
+                val.insert_or_assign(path_literal<char_type>(), ss);
                 val.insert_or_assign(value_literal<char_type>(), a);
                 result.push_back(std::move(val));
             }
@@ -148,20 +150,20 @@ namespace detail {
         {
             for (const auto& a : source.object_range())
             {
-                std::basic_ostringstream<char_type> ss; 
-                ss << path << '/';
+                std::basic_string<char_type> ss(path);
+                ss.push_back('/'); 
                 jsonpointer::escape(a.key(),ss);
                 auto it = target.find(a.key());
                 if (it != target.object_range().end())
                 {
-                    auto temp_diff = from_diff(a.value(),it->value(),ss.str());
+                    auto temp_diff = from_diff(a.value(),it->value(),ss);
                     result.insert(result.array_range().end(),temp_diff.array_range().begin(),temp_diff.array_range().end());
                 }
                 else
                 {
-                    Json val = typename Json::object();
+                    Json val(json_object_arg);
                     val.insert_or_assign(op_literal<char_type>(), remove_literal<char_type>());
-                    val.insert_or_assign(path_literal<char_type>(), ss.str());
+                    val.insert_or_assign(path_literal<char_type>(), ss);
                     result.push_back(std::move(val));
                 }
             }
@@ -170,12 +172,12 @@ namespace detail {
                 auto it = source.find(a.key());
                 if (it == source.object_range().end())
                 {
-                    std::basic_ostringstream<char_type> ss; 
-                    ss << path << '/';
+                    std::basic_string<char_type> ss(path); 
+                    ss.push_back('/');
                     jsonpointer::escape(a.key(),ss);
-                    Json val = typename Json::object();
+                    Json val(json_object_arg);
                     val.insert_or_assign(op_literal<char_type>(), add_literal<char_type>());
-                    val.insert_or_assign(path_literal<char_type>(), ss.str());
+                    val.insert_or_assign(path_literal<char_type>(), ss);
                     val.insert_or_assign(value_literal<char_type>(), a.value());
                     result.push_back(std::move(val));
                 }
@@ -183,7 +185,7 @@ namespace detail {
         }
         else
         {
-            Json val = typename Json::object();
+            Json val(json_object_arg);
             val.insert_or_assign(op_literal<char_type>(), replace_literal<char_type>());
             val.insert_or_assign(path_literal<char_type>(), path);
             val.insert_or_assign(value_literal<char_type>(), target);
@@ -197,9 +199,9 @@ namespace detail {
 template <class Json>
 void apply_patch(Json& target, const Json& patch, std::error_code& patch_ec)
 {
-    typedef typename Json::char_type char_type;
-    typedef std::basic_string<char_type> string_type;
-    typedef typename Json::string_view_type string_view_type;
+    using char_type = typename Json::char_type;
+    using string_type = std::basic_string<char_type>;
+    using string_view_type = typename Json::string_view_type;
 
    jsoncons::jsonpatch::detail::operation_unwinder<Json> unwinder(target);
 

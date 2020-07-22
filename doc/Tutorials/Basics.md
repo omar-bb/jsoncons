@@ -59,7 +59,7 @@ json book4 = json::parse(R"(
 
 // Construct a booklist array
 
-json booklist = json::array();
+json booklist(json_array_arg);
 
 // For efficiency, reserve memory, to avoid reallocations
 booklist.reserve(4);
@@ -182,7 +182,7 @@ The JSON output `booklist.json`
 ```c++
 #include <fstream>
 #include <jsoncons/json.hpp>
-#include <jsoncons_ext/jsonpath/json_query.hpp>
+#include <jsoncons_ext/jsonpath/jsonpath.hpp>
 
 // For convenience
 using jsoncons::json;
@@ -307,7 +307,7 @@ wjson book4 = wjson::parse(LR"(
 
 // Construct a booklist array
 
-wjson booklist = wjson::array();
+wjson booklist(json_array_arg);
 
 // For efficiency, reserve memory, to avoid reallocations
 booklist.reserve(4);

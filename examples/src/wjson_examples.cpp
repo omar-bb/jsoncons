@@ -14,13 +14,14 @@ using namespace jsoncons;
 
 void wjson_object()
 {
-    wjson root;
-    root[L"field1"] = L"test";
-    root[L"field2"] = 3.9;
-    root[L"field3"] = true;
-    std::wcout << root << L"\n";
+    wjson j;
+    j[L"field1"] = L"test";
+    j[L"field2"] = 3.9;
+    j[L"field3"] = true;
+    std::wcout << j << L"\n";
 }
 
+#if 0
 void wjson_escape_u2()
 {
 #ifdef _MSC_VER
@@ -32,7 +33,7 @@ void wjson_escape_u2()
     std::wstring s = val[0].as<std::wstring>();
     std::cout << "length=" << s.length() << std::endl;
     std::cout << "Hex dump: [";
-    for (size_t i = 0; i < s.size(); ++i)
+    for (std::size_t i = 0; i < s.size(); ++i)
     {
         if (i != 0)
             std::cout << " ";
@@ -50,6 +51,7 @@ void wjson_escape_u2()
     os << pretty_print(val,options) << L"\n";
 #endif
 }
+#endif
 
 void wjson_surrogate_pair()
 {
@@ -62,7 +64,7 @@ void wjson_surrogate_pair()
     std::wstring s = val[0].as<std::wstring>();
     std::cout << "length=" << s.length() << std::endl;
     std::cout << "Hex dump: [";
-    for (size_t i = 0; i < s.size(); ++i)
+    for (std::size_t i = 0; i < s.size(); ++i)
     {
         if (i != 0)
             std::cout << " ";
@@ -77,7 +79,7 @@ void wjson_examples()
 {
     std::cout << "\nwjson examples\n\n";
     wjson_object();
-    wjson_escape_u2();
+    //wjson_escape_u2();
     wjson_surrogate_pair();
     std::cout << std::endl;
 }

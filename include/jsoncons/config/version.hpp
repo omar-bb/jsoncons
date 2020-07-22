@@ -6,12 +6,12 @@
 
 #ifndef JSONCONS_VERSION_HPP
 #define JSONCONS_VERSION_HPP
-
+ 
 #include <iostream>
     
 #define JSONCONS_VERSION_MAJOR 0
-#define JSONCONS_VERSION_MINOR 133
-#define JSONCONS_VERSION_PATCH 0
+#define JSONCONS_VERSION_MINOR 154
+#define JSONCONS_VERSION_PATCH 3
 
 namespace jsoncons {
 

@@ -27,14 +27,18 @@ jsoncons is a C++, header-only library for constructing [JSON](http://www.json.o
 data formats such as [CBOR](http://cbor.io/). For each supported data format, it enables you
 to work with the data in a number of ways:
 
-- As a variant-like data structure, [basic_json](doc/ref/basic_json.md) 
+- As a variant-like data structure, [basic_json](https://github.com/danielaparker/jsoncons/blob/master/doc/ref/basic_json.md) 
 
-- As a strongly typed C++ data structure
+- As a strongly typed C++ data structure that implements [json_type_traits](https://github.com/danielaparker/jsoncons/blob/master/doc/ref/json_type_traits.md)
 
-- As a stream of parse events, somewhat analogous to StAX pull parsing and push serializing
+- With [cursor-level access](https://github.com/danielaparker/jsoncons/blob/doc/doc/ref/basic_json_cursor.md) to a stream of parse events, somewhat analogous to StAX pull parsing and push serializing
   in the XML world.
 
-The jsoncons library is header-only: it consists solely of header files containing templates and inline functions, and requires no separately-compiled library binaries when linking. It has no dependence on other libraries. 
+Compared to other JSON libraries, jsoncons has been designed to handle very large JSON texts. At its heart are
+SAX-style parsers and serializers. It supports reading an entire JSON text in memory in a variant-like structure.
+But it also supports efficient access to the underlying data using StAX-style pull parsing and push serializing.
+And it supports incremental parsing into a user's preferred form, using
+information about user types provided by specializations of [json_type_traits](doc/ref/json_type_traits.md).
 
 The [jsoncons data model](https://github.com/danielaparker/jsoncons/blob/master/doc/ref/data-model.md) supports the familiar JSON types - nulls,
 booleans, numbers, strings, arrays, objects - plus byte strings. In addition, jsoncons 
@@ -59,7 +63,8 @@ std::string data = R"(
            "rater": "HikingAsylum",
            "assertion": "advanced",
            "rated": "Marilyn C",
-           "rating": 0.90
+           "rating": 0.90,
+           "confidence": 0.99
          }
        ]
     }
@@ -70,7 +75,7 @@ jsoncons allows you to work with the data in a number of ways:
 
 - As a variant-like data structure, [basic_json](https://github.com/danielaparker/jsoncons/blob/master/doc/ref/basic_json.md) 
 
-- As a strongly typed C++ data structure
+- As a strongly typed C++ data structure that implements [json_type_traits](https://github.com/danielaparker/jsoncons/blob/master/doc/ref/json_type_traits.md)
 
 - As a stream of parse events
 
@@ -83,43 +88,55 @@ int main()
     // Parse the string of data into a json value
     json j = json::parse(data);
 
-    // Pretty print
-    std::cout << "(1)\n" << pretty_print(j) << "\n\n";
-
     // Does object member reputons exist?
-    std::cout << "(2) " << std::boolalpha << j.contains("reputons") << "\n\n";
+    std::cout << "(1) " << std::boolalpha << j.contains("reputons") << "\n\n";
 
-    // Get a reference to reputons array value
+    // Get a reference to reputons array 
     const json& v = j["reputons"]; 
 
-    // Iterate over reputons array value
-    std::cout << "(3)\n";
+    // Iterate over reputons array 
+    std::cout << "(2)\n";
     for (const auto& item : v.array_range())
     {
         // Access rated as string and rating as double
         std::cout << item["rated"].as<std::string>() << ", " << item["rating"].as<double>() << "\n";
     }
+    std::cout << "\n";
+
+    // Select all "rated" with JSONPath
+    std::cout << "(3)\n";
+    json result = jsonpath::json_query(j,"$..rated");
+    std::cout << pretty_print(result) << "\n\n";
+
+    // Serialize back to JSON
+    std::cout << "(4)\n" << pretty_print(j) << "\n\n";
 }
 ```
 Output:
 ```
-(1)
+(1) true
+
+(2)
+Marilyn C, 0.9
+
+(3)
+[
+    "Marilyn C"
+]
+
+(4)
 {
     "application": "hiking",
     "reputons": [
         {
             "assertion": "advanced",
+            "confidence": 0.99,
             "rated": "Marilyn C",
             "rater": "HikingAsylum",
             "rating": 0.9
         }
     ]
 }
-
-(2) true
-
-(3)
-Marilyn C, 0.9
 ```
 
 #### As a strongly typed C++ data structure
@@ -144,12 +161,17 @@ namespace ns {
         hiking_experience assertion_;
         std::string rated_;
         double rating_;
+        std::optional<double> confidence_; // assumes C++17, otherwise use jsoncons::optional
+        std::optional<uint64_t> expires_;
     public:
         hiking_reputon(const std::string& rater,
                        hiking_experience assertion,
                        const std::string& rated,
-                       double rating)
-            : rater_(rater), assertion_(assertion), rated_(rated), rating_(rating)
+                       double rating,
+                       const std::optional<double>& confidence = std::optional<double>(),
+                       const std::optional<uint64_t>& expires = std::optional<uint64_t>())
+            : rater_(rater), assertion_(assertion), rated_(rated), rating_(rating),
+              confidence_(confidence), expires_(expires)
         {
         }
 
@@ -157,6 +179,8 @@ namespace ns {
         hiking_experience assertion() const {return assertion_;}
         const std::string& rated() const {return rated_;}
         double rating() const {return rating_;}
+        std::optional<double> confidence() const {return confidence_;}
+        std::optional<uint64_t> expires() const {return expires_;}
     };
 
     class hiking_reputation
@@ -178,9 +202,12 @@ namespace ns {
 
 // Declare the traits. Specify which data members need to be serialized.
 
-JSONCONS_ENUM_TRAITS_DECL(ns::hiking_experience, beginner, intermediate, advanced)
-JSONCONS_GETTER_CTOR_TRAITS_DECL(ns::hiking_reputon, rater, assertion, rated, rating)
-JSONCONS_GETTER_CTOR_TRAITS_DECL(ns::hiking_reputation, application, reputons)
+JSONCONS_ENUM_TRAITS(ns::hiking_experience, beginner, intermediate, advanced)
+// First four members listed are mandatory, confidence and expires are optional
+JSONCONS_N_CTOR_GETTER_TRAITS(ns::hiking_reputon, 4, rater, assertion, rated, rating, 
+                              confidence, expires)
+// All members are mandatory
+JSONCONS_ALL_CTOR_GETTER_TRAITS(ns::hiking_reputation, application, reputons)
 
 int main()
 {
@@ -211,6 +238,7 @@ Marilyn C, 0.9
     "reputons": [
         {
             "assertion": "advanced",
+            "confidence": 0.99,
             "rated": "Marilyn C",
             "rater": "HikingAsylum",
             "rating": 0.9
@@ -218,19 +246,19 @@ Marilyn C, 0.9
     ]
 }
 ```
-This example makes use of the convenience macros `JSONCONS_ENUM_TRAITS_DECL`
-and `JSONCONS_GETTER_CTOR_TRAITS_DECL` to specialize the 
+This example makes use of the convenience macros `JSONCONS_ENUM_TRAITS`
+and `JSONCONS_ALL_CTOR_GETTER_TRAITS` to specialize the 
 [json_type_traits](doc/ref/json_type_traits.md) for the enum type
 `ns::hiking_experience` and the classes `ns::hiking_reputon` and 
 `ns::hiking_reputation`.
-The macro `JSONCONS_ENUM_TRAITS_DECL` generates the code from
-the enum values, and the macro `JSONCONS_GETTER_CTOR_TRAITS_DECL` 
-generates the code from the getter functions and a constructor. 
+The macro `JSONCONS_ENUM_TRAITS` generates the code from
+the enum values, and the macro `JSONCONS_ALL_CTOR_GETTER_TRAITS` 
+generates the code from the get functions and a constructor. 
 These macro declarations must be placed outside any namespace blocks.
 
 See [examples](https://github.com/danielaparker/jsoncons/blob/master/doc/Examples.md#G1) for other ways of specializing `json_type_traits`.
 
-#### As a stream of parse events
+#### With cursor-level access
 
 ```c++
 int main()
@@ -253,7 +281,7 @@ int main()
             case staj_event_type::end_object:
                 std::cout << event.event_type() << " " << "\n";
                 break;
-            case staj_event_type::name:
+            case staj_event_type::key:
                 // Or std::string_view, if supported
                 std::cout << event.event_type() << ": " << event.get<jsoncons::string_view>() << "\n";
                 break;
@@ -277,7 +305,7 @@ int main()
                 std::cout << event.event_type() << ": " << event.get<double>() << "\n";
                 break;
             default:
-                std::cout << "Unhandled event type: " << event.event_type() << " " << "\n";;
+                std::cout << "Unhandled event type: " << event.event_type() << " " << "\n";
                 break;
         }
     }    
@@ -285,20 +313,23 @@ int main()
 ```
 Output:
 ```
+Marilyn C
 begin_object
-name: application
+key: application
 string_value: hiking
-name: reputons
+key: reputons
 begin_array
 begin_object
-name: rater
+key: rater
 string_value: HikingAsylum
-name: assertion
+key: assertion
 string_value: advanced
-name: rated
+key: rated
 string_value: Marilyn C
-name: rating
+key: rating
 double_value: 0.9
+key: confidence
+double_value: 0.99
 end_object
 end_array
 end_object
@@ -307,7 +338,8 @@ end_object
 <div id="A2"/>
 ### Reading JSON text from a file
 
-Example file (`books.json`):
+Input JSON file `books.json`:
+
 ```c++
 [
     {
@@ -355,7 +387,7 @@ for (auto it = books.array_range().begin();
 ```
 or a traditional for loop
 ```c++
-for (size_t i = 0; i < books.size(); ++i)
+for (std::size_t i = 0; i < books.size(); ++i)
 {
     json& book = books[i];
     std::string author = book["author"].as<std::string>();
@@ -401,15 +433,13 @@ Note that the third book, Cutter's Way, is missing a price.
 
 You have a choice of object member accessors:
 
-- `book["price"]` will throw `std::out_of_range` if there is no price
-- `book.get_with_default("price",std::string("n/a"))` will return the price converted to the
-   default's data type, `std::string`, or `"n/a"` if there is no price.
+- `book["price"]` will throw `std::out_of_range` if there is no price.
+- `book.at("price")` will throw `std::out_of_range` if there is no price.
+- `book.at_or_null("price")` will return a null json value if there is no price.
+- `book.get_value_or<std::string>("price","n/a")` will return the price as `std::string` if available, otherwise 
+`"n/a"`.
 
-So if you want to show "n/a" for the missing price, you can use this accessor
-```c++
-std::string price = book.get_with_default("price","n/a");
-```
-Or you can check if book has a member "price" with the method `contains`, and output accordingly,
+Or, you can check if book has a member "price" with the member function `contains`, 
 ```c++
 if (book.contains("price"))
 {
@@ -444,17 +474,17 @@ image_sizing.insert_or_assign("Dimension 2",json::null());  // a null value
 
 Or, use an object initializer-list:
 ```c++
-json file_settings = json::object{
+json file_settings(json::object_arg, {
     {"Image Format", "JPEG"},
     {"Color Space", "sRGB"},
     {"Limit File Size", true},
     {"Limit File Size To", 10000}
-};
+});
 ```
 
 To construct a json array, initialize with the array type 
 ```c++
-json color_spaces = json::array();
+json color_spaces(json_array_arg);
 ```
 and add some elements
 ```c++
@@ -465,7 +495,7 @@ color_spaces.push_back("ProPhoto RGB");
 
 Or, use an array initializer-list:
 ```c++
-json image_formats = json::array{"JPEG","PSD","TIFF","DNG"};
+json image_formats(json_array_arg, {"JPEG","PSD","TIFF","DNG"});
 ```
 
 The `operator[]` provides another way for setting name-value pairs.
@@ -530,8 +560,7 @@ You can read the `CSV` file into a `json` value with the `decode_csv` function.
 ```c++
 #include <fstream>
 #include <jsoncons/json.hpp>
-#include <jsoncons_ext/csv/csv_reader.hpp>
-#include <jsoncons_ext/csv/csv_encoder.hpp>
+#include <jsoncons_ext/csv/csv.hpp>
 
 using namespace jsoncons;
 
@@ -599,13 +628,13 @@ There are a few things to note about the effect of the parameter settings.
 The `pretty_print` function applies stylistic formatting to JSON text. For example
 
 ```c++
-    json val;
+json j;
 
-    val["verts"] = json::array{1, 2, 3};
-    val["normals"] = json::array{1, 0, 1};
-    val["uvs"] = json::array{0, 0, 1, 1};
+j["verts"] = json(json_array_arg, {1, 2, 3});
+j["normals"] = json(json_array_arg, {1, 0, 1});
+j["uvs"] = json(json_array_arg, {0, 0, 1, 1});
 
-    std::cout << pretty_print(val) << std::endl;
+std::cout << pretty_print(j) << std::endl;
 ```
 produces
 
@@ -669,7 +698,7 @@ produces
 <div id="A7"/>
 ### Filters
 
-You can rename object member names with the built in filter [rename_object_member_filter](https://github.com/danielaparker/jsoncons/blob/master/doc/ref/rename_object_member_filter.md)
+You can rename object member names with the built in filter [rename_object_key_filter](https://github.com/danielaparker/jsoncons/blob/master/doc/ref/rename_object_key_filter.md)
 
 ```c++
 #include <sstream>
@@ -685,18 +714,18 @@ int main()
     json_stream_encoder encoder(std::cout);
 
     // Filters can be chained
-    rename_object_member_filter filter2("fifth", "fourth", encoder);
-    rename_object_member_filter filter1("fourth", "third", filter2);
+    rename_object_key_filter filter2("fifth", "fourth", encoder);
+    rename_object_key_filter filter1("fourth", "third", filter2);
 
     // A filter can be passed to any function that takes
-    // a json_content_handler ...
+    // a json_visitor ...
     std::cout << "(1) ";
     std::istringstream is(s);
     json_reader reader(is, filter1);
     reader.read();
     std::cout << std::endl;
 
-    // or a json_content_handler    
+    // or a json_visitor    
     std::cout << "(2) ";
     ojson j = ojson::parse(s);
     j.dump(filter1);
@@ -708,7 +737,7 @@ Output:
 (1) {"first":1,"second":2,"third":3,"fourth":4}
 (2) {"first":1,"second":2,"third":3,"fourth":4}
 ```
-Or define and use your own filters. See [json_filter](https://github.com/danielaparker/jsoncons/blob/master/doc/ref/json_filter.md) for details.
+Or define and use your own filters. See [basic_json_filter](https://github.com/danielaparker/jsoncons/blob/master/doc/ref/basic_json_filter.md) for details.
 <div id="A8"/>
 ### JSONPath
 
@@ -746,7 +775,7 @@ Example JSON file (booklist.json):
 ```
 JSONPath examples:
 ```c++    
-#include <jsoncons_ext/jsonpath/json_query.hpp>
+#include <jsoncons_ext/jsonpath/jsonpath.hpp>
 
 using jsoncons::jsonpath::json_query;
 
@@ -838,9 +867,9 @@ Note that the allocator type allows you to supply a custom allocator. For exampl
 #include <boost/pool/pool_alloc.hpp>
 #include <jsoncons/json.hpp>
 
-typedef jsoncons::basic_json<char, boost::fast_pool_allocator<char>> myjson;
+typedef jsoncons::basic_json<char, boost::fast_pool_allocator<char>> my_json;
 
-myjson o;
+my_json o;
 
 o.insert_or_assign("FirstName","Joe");
 o.insert_or_assign("LastName","Smith");
@@ -856,12 +885,12 @@ jsoncons supports wide character strings and streams with `wjson` and `wjson_rea
 ```c++
 using jsoncons::wjson;
 
-wjson root;
-root[L"field1"] = L"test";
-root[L"field2"] = 3.9;
-root[L"field3"] = true;
+wjson j;
+j[L"field1"] = L"test";
+j[L"field2"] = 3.9;
+j[L"field3"] = true;
 
-std::wcout << root << L"\n";
+std::wcout << j << L"\n";
 ```
 which prints
 ```c++

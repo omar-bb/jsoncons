@@ -1,27 +1,28 @@
 ### jsoncons::jsonpath::json_query
 
-Returns a `json` array of values or normalized path expressions selected from a root `json` structure.
-
 ```c++
-#include <jsoncons/jsonpath/json_query.hpp>
+#include <jsoncons_ext/jsonpath/json_query.hpp>
 
 enum class result_type {value,path};
 
 template<Json>
 Json json_query(const Json& root, 
-                const typename Json::string_view_type& path,
+                const typename Json::string_view_type& expr,
                 result_type result_t = result_type::value);
 ```
+
+Returns a `json` array of values or normalized path expressions selected from a root `json` structure.
+
 #### Parameters
 
 <table>
   <tr>
     <td>root</td>
-    <td>JSON value</td> 
+    <td>Json value</td> 
   </tr>
   <tr>
     <td>path</td>
-    <td>JSONPath expression string</td> 
+    <td>JSONPath expression</td> 
   </tr>
   <tr>
     <td>result_t</td>
@@ -36,7 +37,7 @@ Returns an empty array if there is no match.
 
 #### Exceptions
 
-Throws [jsonpath_error](jsonpath_error.md) if JSONPath evaluation fails.
+Throws a [jsonpath_error](jsonpath_error.md) if JSONPath evaluation fails.
 
 #### Note
 Stefan Goessner's javascript implemention returns `false` in case of no match, but in a note he suggests an alternative is to return an empty array. The `jsoncons` implementation takes that alternative and returns an empty array in case of no match.
@@ -84,7 +85,7 @@ The examples below use the JSON text from [Stefan Goessner's JSONPath](http://go
 
 ```c++    
 #include <jsoncons/json.hpp>
-#include <jsoncons_ext/jsonpath/json_query.hpp>
+#include <jsoncons_ext/jsonpath/jsonpath.hpp>
 #include <fstream>
 
 using namespace jsoncons;
@@ -243,7 +244,7 @@ Output:
 
 ```c++
 #include <jsoncons/json.hpp>
-#include <jsoncons_ext/jsonpath/json_query.hpp>
+#include <jsoncons_ext/jsonpath/jsonpath.hpp>
 
 using namespace jsoncons;
 

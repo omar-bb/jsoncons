@@ -16,9 +16,9 @@
 #include <istream> // std::basic_istream
 #include <jsoncons/byte_string.hpp>
 #include <jsoncons/config/jsoncons_config.hpp>
-#include <jsoncons/json_content_handler.hpp>
+#include <jsoncons/json_visitor.hpp>
 #include <jsoncons/json_exception.hpp>
-#include <jsoncons/staj_reader.hpp>
+#include <jsoncons/staj_cursor.hpp>
 #include <jsoncons/source.hpp>
 #include <jsoncons_ext/ubjson/ubjson_parser.hpp>
 
@@ -26,14 +26,15 @@ namespace jsoncons {
 namespace ubjson {
 
 template<class Src=jsoncons::binary_stream_source,class Allocator=std::allocator<char>>
-class basic_ubjson_cursor : public basic_staj_reader<char>, private virtual ser_context
+class basic_ubjson_cursor : public basic_staj_cursor<char>, private virtual ser_context
 {
 public:
-    typedef Allocator allocator_type;
+    using source_type = Src;
+    using char_type = char;
+    using allocator_type = Allocator;
 private:
-    basic_staj_event_handler<char> event_handler_;
-
-    basic_ubjson_parser<Src> parser_;
+    basic_ubjson_parser<Src,Allocator> parser_;
+    basic_staj_visitor<char_type> cursor_visitor_;
     bool eof_;
 
     // Noncopyable and nonmoveable
@@ -41,23 +42,14 @@ private:
     basic_ubjson_cursor& operator=(const basic_ubjson_cursor&) = delete;
 
 public:
-    typedef string_view string_view_type;
-
-    template <class Source>
-    basic_ubjson_cursor(Source&& source)
-       : parser_(std::forward<Source>(source)),
-         eof_(false)
-    {
-        if (!done())
-        {
-            next();
-        }
-    }
+    using string_view_type = string_view;
 
     template <class Source>
     basic_ubjson_cursor(Source&& source,
-                        std::function<bool(const staj_event&, const ser_context&)> filter)
-       : parser_(std::forward<Source>(source)), event_handler_(filter),
+                      const ubjson_decode_options& options = ubjson_decode_options(),
+                      const Allocator& alloc = Allocator())
+       : parser_(std::forward<Source>(source), options, alloc), 
+         cursor_visitor_(accept_all), 
          eof_(false)
     {
         if (!done())
@@ -70,21 +62,32 @@ public:
 
     template <class Source>
     basic_ubjson_cursor(Source&& source, 
-                      std::error_code& ec)
-       : parser_(std::forward<Source>(source)),
-         eof_(false)
+                        std::error_code& ec)
+       : basic_ubjson_cursor(std::allocator_arg, Allocator(),
+                             std::forward<Source>(source), 
+                             ubjson_decode_options(), 
+                             ec)
     {
-        if (!done())
-        {
-            next(ec);
-        }
     }
 
     template <class Source>
-    basic_ubjson_cursor(Source&& source,
-                      std::function<bool(const staj_event&, const ser_context&)> filter, 
-                      std::error_code& ec)
-       : parser_(std::forward<Source>(source)), event_handler_(filter),
+    basic_ubjson_cursor(Source&& source, 
+                        const ubjson_decode_options& options,
+                        std::error_code& ec)
+       : basic_ubjson_cursor(std::allocator_arg, Allocator(),
+                             std::forward<Source>(source), 
+                             options, 
+                             ec)
+    {
+    }
+
+    template <class Source>
+    basic_ubjson_cursor(std::allocator_arg_t, const Allocator& alloc, 
+                        Source&& source,
+                        const ubjson_decode_options& options,
+                        std::error_code& ec)
+       : parser_(std::forward<Source>(source), options, alloc), 
+         cursor_visitor_(accept_all),
          eof_(false)
     {
         if (!done())
@@ -98,29 +101,28 @@ public:
         return parser_.done();
     }
 
-    const basic_staj_event<char>& current() const override
+    const staj_event& current() const override
     {
-        return event_handler_.event();
+        return cursor_visitor_.event();
     }
 
-    void read_to(basic_json_content_handler<char>& handler) override
+    void read_to(basic_json_visitor<char_type>& visitor) override
     {
         std::error_code ec;
-        read_to(handler, ec);
+        read_to(visitor, ec);
         if (ec)
         {
-            throw ser_error(ec,parser_.line(),parser_.column());
+            JSONCONS_THROW(ser_error(ec,parser_.line(),parser_.column()));
         }
     }
 
-    void read_to(basic_json_content_handler<char>& handler,
+    void read_to(basic_json_visitor<char_type>& visitor,
                 std::error_code& ec) override
     {
-        if (!staj_to_saj_event(event_handler_.event(), handler, *this))
+        if (staj_to_saj_event(cursor_visitor_.event(), visitor, *this, ec))
         {
-            return;
+            read_next(visitor, ec);
         }
-        read_next(handler, ec);
     }
 
     void next() override
@@ -129,28 +131,13 @@ public:
         next(ec);
         if (ec)
         {
-            throw ser_error(ec,parser_.line(),parser_.column());
+            JSONCONS_THROW(ser_error(ec,parser_.line(),parser_.column()));
         }
     }
 
     void next(std::error_code& ec) override
     {
         read_next(ec);
-    }
-
-    void read_next(std::error_code& ec)
-    {
-        read_next(event_handler_, ec);
-    }
-
-    void read_next(basic_json_content_handler<char>& handler, std::error_code& ec)
-    {
-        parser_.restart();
-        while (!parser_.stopped())
-        {
-            parser_.parse(handler, ec);
-            if (ec) return;
-        }
     }
 
     const ser_context& context() const override
@@ -163,20 +150,109 @@ public:
         return eof_;
     }
 
-    size_t line() const override
+    std::size_t line() const override
     {
         return parser_.line();
     }
 
-    size_t column() const override
+    std::size_t column() const override
     {
         return parser_.column();
     }
+
+    friend
+    staj_filter_view operator|(basic_ubjson_cursor& cursor, 
+                               std::function<bool(const staj_event&, const ser_context&)> pred)
+    {
+        return staj_filter_view(cursor, pred);
+    }
+
+#if !defined(JSONCONS_NO_DEPRECATED)
+
+    template <class Source>
+    JSONCONS_DEPRECATED_MSG("Instead, use pipe syntax for filter")
+    basic_ubjson_cursor(Source&& source,
+                      std::function<bool(const staj_event&, const ser_context&)> filter,
+                      const ubjson_decode_options& options = ubjson_decode_options(),
+                      const Allocator& alloc = Allocator())
+       : parser_(std::forward<Source>(source), options, alloc), 
+         cursor_visitor_(filter), 
+         eof_(false)
+    {
+        if (!done())
+        {
+            next();
+        }
+    }
+
+    template <class Source>
+    JSONCONS_DEPRECATED_MSG("Instead, use pipe syntax for filter")
+    basic_ubjson_cursor(Source&& source, 
+                        std::function<bool(const staj_event&, const ser_context&)> filter,
+                        std::error_code& ec)
+       : basic_ubjson_cursor(std::allocator_arg, Allocator(),
+                             std::forward<Source>(source), filter, ec)
+    {
+    }
+
+    template <class Source>
+    JSONCONS_DEPRECATED_MSG("Instead, use pipe syntax for filter")
+    basic_ubjson_cursor(std::allocator_arg_t, const Allocator& alloc, 
+                        Source&& source,
+                        std::function<bool(const staj_event&, const ser_context&)> filter,
+                        std::error_code& ec)
+       : parser_(std::forward<Source>(source), alloc), 
+         cursor_visitor_(filter),
+         eof_(false)
+    {
+        if (!done())
+        {
+            next(ec);
+        }
+    }
+
+    JSONCONS_DEPRECATED_MSG("Instead, use read_to(basic_json_visitor<char_type>&)")
+    void read(basic_json_visitor<char_type>& visitor)
+    {
+        read_to(visitor);
+    }
+
+    JSONCONS_DEPRECATED_MSG("Instead, use read_to(basic_json_visitor<char_type>&, std::error_code&)")
+    void read(basic_json_visitor<char_type>& visitor,
+                 std::error_code& ec) 
+    {
+        read_to(visitor, ec);
+    }
+#endif
 private:
+    static bool accept_all(const staj_event&, const ser_context&) 
+    {
+        return true;
+    }
+
+    void read_next(std::error_code& ec)
+    {
+        parser_.restart();
+        while (!parser_.stopped())
+        {
+            parser_.parse(cursor_visitor_, ec);
+            if (ec) return;
+        }
+    }
+
+    void read_next(basic_json_visitor<char_type>& visitor, std::error_code& ec)
+    {
+        parser_.restart();
+        while (!parser_.stopped())
+        {
+            parser_.parse(visitor, ec);
+            if (ec) return;
+        }
+    }
 };
 
-typedef basic_ubjson_cursor<jsoncons::binary_stream_source> ubjson_stream_cursor;
-typedef basic_ubjson_cursor<jsoncons::bytes_source> ubjson_bytes_cursor;
+using ubjson_stream_cursor = basic_ubjson_cursor<jsoncons::binary_stream_source>;
+using ubjson_bytes_cursor = basic_ubjson_cursor<jsoncons::bytes_source>;
 
 } // namespace ubjson
 } // namespace jsoncons

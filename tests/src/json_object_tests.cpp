@@ -13,13 +13,13 @@
 
 using namespace jsoncons;
 
-TEST_CASE("json = json::object(first,last)")
+TEST_CASE("json(json_object_arg, first, last)")
 {
     SECTION("copy map into json")
     {
         std::map<std::string,double> m = {{"c",1},{"b",2},{"a",3}};
 
-        json j = json::object(m.begin(),m.end());
+        json j(json_object_arg, m.begin(),m.end());
 
         REQUIRE(j.size() == 3);
         auto it = j.object_range().begin();
@@ -73,7 +73,7 @@ TEST_CASE("json insert(first,last) test")
     }
 
     // Fails with xenial-armhf
-/*
+
     SECTION("move map into json")
     {
         std::map<std::string,double> m1 = {{"a",1},{"b",2},{"c",3}};
@@ -94,7 +94,6 @@ TEST_CASE("json insert(first,last) test")
         CHECK(it++->key() == "e");
         CHECK(it++->key() == "f");
     }
-*/
 }
 
 TEST_CASE("json as<T>")
@@ -108,13 +107,13 @@ TEST_CASE("json as<T>")
 
     SECTION("key not found")
     {
-        try
+        JSONCONS_TRY
         {
             json j;
             std::string s = j["empty"].as<std::string>();
             CHECK(false);
         }
-        catch (const std::out_of_range& e)
+        JSONCONS_CATCH (const std::out_of_range& e)
         {
             CHECK(e.what() == std::string("Key 'empty' not found"));
         }
@@ -145,7 +144,7 @@ TEST_CASE("test_erase_member")
     CHECK(o.size() == 0);
 
     json a;
-    json b = json::object();
+    json b(json_object_arg);
     b["input-file"] = "config_file";
     json b_copy = b;
 
@@ -178,7 +177,7 @@ TEST_CASE("test_empty_object")
     json a;
     CHECK(a.size() == 0);
     CHECK(a.is_object());
-    CHECK(a.is<json::object>());
+    CHECK(a.is_object());
 
     json::object_iterator begin = a.object_range().begin();
     json::object_iterator end = a.object_range().end();
@@ -191,7 +190,7 @@ TEST_CASE("test_empty_object")
     a["key"] = "Hello";
     CHECK(a.size() == 1);
     CHECK(a.is_object());
-    CHECK(a.is<json::object>());
+    CHECK(a.is_object());
 }
 
 TEST_CASE("test_const_empty_object")
@@ -199,7 +198,7 @@ TEST_CASE("test_const_empty_object")
     const json b;
     CHECK(b.size() == 0);
     CHECK(b.is_object());
-    CHECK(b.is<json::object>());
+    CHECK(b.is_object());
 
     json::const_object_iterator begin = b.object_range().begin();
     json::const_object_iterator end = b.object_range().end();
@@ -215,13 +214,13 @@ TEST_CASE("test_empty_object_reserve")
     json c;
     CHECK(c.size() == 0);
     CHECK(c.is_object());
-    CHECK(c.is<json::object>());
+    CHECK(c.is_object());
     c.reserve(100);
     CHECK(c.capacity() == 100);
     c["key"] = "Hello";
     CHECK(c.size() == 1);
     CHECK(c.is_object());
-    CHECK(c.is<json::object>());
+    CHECK(c.is_object());
     CHECK(c.capacity() == 100);
 }
 
@@ -230,12 +229,12 @@ TEST_CASE("test_empty_object_copy")
     json a;
     CHECK(a.size() == 0);
     CHECK(a.is_object());
-    CHECK(a.is<json::object>());
+    CHECK(a.is_object());
 
     json b = a;
     CHECK(b.size() == 0);
     CHECK(b.is_object());
-    CHECK(b.is<json::object>());
+    CHECK(b.is_object());
 }
 
 TEST_CASE("test_empty_object_assignment")
@@ -243,30 +242,30 @@ TEST_CASE("test_empty_object_assignment")
     json a;
     CHECK(a.size() == 0);
     CHECK(a.is_object());
-    CHECK(a.is<json::object>());
+    CHECK(a.is_object());
 
-    json b = json::make_array<1>(10);
+    json b = json::make_array(10);
     CHECK(b.size() == 10);
     CHECK(b.is_array());
-    CHECK(b.is<json::array>());
+    CHECK(b.is_array());
 
     b = a;
     CHECK(b.size() == 0);
     CHECK(b.is_object());
-    CHECK(b.is<json::object>());
+    CHECK(b.is_object());
 
     json c;
     c["key"] = "value";
     CHECK(c.size() == 1);
     CHECK(c.is_object());
-    CHECK(c.is<json::object>());
+    CHECK(c.is_object());
     c = a;
     CHECK(c.size() == 0);
     CHECK(c.is_object());
-    CHECK(c.is<json::object>());
+    CHECK(c.is_object());
 }
 
-TEST_CASE("get_with_default test")
+TEST_CASE("at_or_null test")
 {
     json a = json::parse(R"(
     {
@@ -277,39 +276,49 @@ TEST_CASE("get_with_default test")
 
     SECTION("1 arg")
     {
-        const json& j = a.get_with_default("key1");
+        const json& j = a.at_or_null("key1");
         CHECK(j.as<std::string>() == std::string("value1"));
     }
 
     SECTION("1 arg proxy")
     {
-        const json& j = a["key2"].get_with_default("key3");
+        const json& j = a["key2"].at_or_null("key3");
         CHECK(j.as<std::string>() == std::string("value3"));
     }
 
     SECTION("1 arg default")
     {
-        const json& j = a.get_with_default("key4");
+        const json& j = a.at_or_null("key4");
         CHECK(j.is_null());
     }
 
     SECTION("1 arg proxy default")
     {
-        const json& j = a["key2"].get_with_default("key4");
+        const json& j = a["key2"].at_or_null("key4");
         CHECK(j.is_null());
     }
 
     SECTION("1 arg null")
     {
-        const json& j = json::null().get_with_default("key1");
+        const json& j = json::null().at_or_null("key1");
         CHECK(j.is_null());
     }
+}
+
+TEST_CASE("get_value_or test")
+{
+    json a = json::parse(R"(
+    {
+        "key1" : "value1",
+        "key2" : {"key3" : "value3"}
+    }
+    )");
 
     SECTION("2 arg")
     {
         std::string s1 = a.at("key1").as<std::string>();
         std::string s1a = a.at("key1").as<std::string>();
-        std::string s2 = a.get_with_default("key4","null");
+        std::string s2 = a.get_value_or<std::string>("key4","null");
         REQUIRE_THROWS_AS(a.at("key4"), std::out_of_range);
 
         CHECK(s1 == std::string("value1"));
@@ -320,7 +329,7 @@ TEST_CASE("get_with_default test")
 
     SECTION("2 arg null")
     {
-        std::string s2 = json::null().get_with_default("key4","null");
+        std::string s2 = json::null().get_value_or<std::string>("key4","null");
         CHECK(s2 == std::string("null"));
     }
 }
@@ -334,8 +343,8 @@ TEST_CASE("test_proxy_get")
 
     std::string s1 = a["object1"].at("key1").as<std::string>();
     std::string s1a = a["object1"].at("key1").as<std::string>();
-    std::string s2 = a["object1"].get_with_default("key2",json::null()).as<std::string>();
-    CHECK(a["object1"].get_with_default("key2", json::null()).is_null());
+    std::string s2 = a["object1"].get_value_or<json>("key2",json::null()).as<std::string>();
+    CHECK(a["object1"].get_value_or<json>("key2", json::null()).is_null());
     //std::cout << s2 << std::endl;
     REQUIRE_THROWS_AS(a["object1"].at("key2").as<std::string>(), std::out_of_range);
 
@@ -344,7 +353,7 @@ TEST_CASE("test_proxy_get")
     CHECK(std::string("null") == s2);
 }
 
-TEST_CASE("test_proxy_get_with_default")
+TEST_CASE("test proxy get_value_or")
 {
     json a;
 
@@ -352,14 +361,14 @@ TEST_CASE("test_proxy_get_with_default")
     a["object1"]["field1"] = "3.7";
     a["object1"]["field2"] = 1.5;
 
-    std::string s1 = a["object1"].get_with_default("field1","default");
-    std::string s2 = a["object1"].get_with_default("field2","1.0");
-    std::string s3 = a["object1"].get_with_default("field3","1.0");
-    std::string s4 = a["object1"].get_with_default<std::string>("field2","1.0");
-    std::string s5 = a["object1"].get_with_default<std::string>("field3","1.0");
-    double d1 = a["object1"].get_with_default("field1",1.0);
-    double d2 = a["object1"].get_with_default("field2",1.0);
-    double d3 = a["object1"].get_with_default("field3",1.0);
+    std::string s1 = a["object1"].get_value_or<std::string>("field1","default");
+    std::string s2 = a["object1"].get_value_or<std::string>("field2","1.0");
+    std::string s3 = a["object1"].get_value_or<std::string>("field3","1.0");
+    std::string s4 = a["object1"].get_value_or<std::string>("field2","1.0");
+    std::string s5 = a["object1"].get_value_or<std::string>("field3","1.0");
+    double d1 = a["object1"].get_value_or<double> ("field1",1.0);
+    double d2 = a["object1"].get_value_or<double> ("field2",1.0);
+    double d3 = a["object1"].get_value_or<double> ("field3",1.0);
 
     CHECK(std::string("3.7") == s1);
     CHECK(std::string("1.5") == s2);
@@ -552,7 +561,7 @@ TEST_CASE("test_get_with_string_default")
     json example;
 
     std::string s("too long string for short string");
-    std::string result = example.get_with_default("test", s);
+    std::string result = example.get_value_or<std::string>("test", s);
     CHECK(s == result);
 }
 
@@ -664,9 +673,9 @@ TEST_CASE("test_is")
     obj["field2"] = -10;
     obj["field3"] = 10U;
 
-    CHECK(obj["field1"].type() == jsoncons::storage_type::int64_val);
-    CHECK(obj["field2"].type() == jsoncons::storage_type::int64_val);
-    CHECK(obj["field3"].type() == jsoncons::storage_type::uint64_val);
+    CHECK(obj["field1"].storage() == jsoncons::storage_kind::int64_value);
+    CHECK(obj["field2"].storage() == jsoncons::storage_kind::int64_value);
+    CHECK(obj["field3"].storage() == jsoncons::storage_kind::uint64_value);
 
     CHECK_FALSE(obj["field1"].is<std::string>());
     CHECK(obj["field1"].is<short>());
@@ -704,7 +713,7 @@ TEST_CASE("test_is2")
 {
     json obj = json::parse("{\"field1\":10}");
 
-    CHECK(obj["field1"].type() == jsoncons::storage_type::uint64_val);
+    CHECK(obj["field1"].storage() == jsoncons::storage_kind::uint64_value);
 
     CHECK_FALSE(obj["field1"].is<std::string>());
     CHECK(obj["field1"].is<int>());
@@ -720,13 +729,13 @@ TEST_CASE("test_is_type")
 {
     json obj;
     CHECK(obj.is_object());
-    CHECK(obj.is<json::object>());
+    CHECK(obj.is_object());
 
     // tests for proxy is_type methods
     obj["string"] = "val1";
 
     CHECK(obj.is_object());
-    CHECK(obj.is<json::object>());
+    CHECK(obj.is_object());
 
     CHECK(obj["string"].is_string());
     CHECK(obj["string"].is<std::string>());
@@ -772,11 +781,11 @@ TEST_CASE("test_is_type")
 
     obj["object"] = json();
     CHECK(obj["object"].is_object());
-    CHECK(obj["object"].is<json::object>());
+    CHECK(obj["object"].is_object());
 
-    obj["array"] = json::array();
+    obj["array"] = json(json_array_arg);
     CHECK(obj["array"].is_array());
-    CHECK(obj["array"].is<json::array>());
+    CHECK(obj["array"].is_array());
 
     // tests for json is_type methods
 
@@ -799,8 +808,8 @@ TEST_CASE("test_object_get_defaults")
     CHECK(x1 == 1.0);
     CHECK(x2 == 20.0);
 
-    std::string s1 = obj.get_with_default("field3", "Montreal");
-    std::string s2 = obj.get_with_default("field4", "San Francisco");
+    std::string s1 = obj.get_value_or<std::string> ("field3", "Montreal");
+    std::string s2 = obj.get_value_or<std::string> ("field4", "San Francisco");
 
     CHECK(s1 =="Toronto");
     CHECK(s2 == "San Francisco");
@@ -826,12 +835,12 @@ TEST_CASE("test_value_not_found_and_defaults")
     obj["first_name"] = "Jane";
     obj["last_name"] = "Roe";
 
-    try
+    JSONCONS_TRY
     {
         auto val = obj["outdoor_experience"].as<std::string>();
         CHECK(false);
     }
-    catch (const std::out_of_range& e)
+    JSONCONS_CATCH (const std::out_of_range& e)
     {
         CHECK(e.what() == std::string("Key 'outdoor_experience' not found"));
     }
@@ -843,12 +852,12 @@ TEST_CASE("test_value_not_found_and_defaults")
 
     CHECK(experience == "");
 
-    try
+    JSONCONS_TRY
     {
         auto val = obj["first_aid_certification"].as<std::string>();
         CHECK(false);
     }
-    catch (const std::out_of_range& e)
+    JSONCONS_CATCH (const std::out_of_range& e)
     {
         CHECK(e.what() == std::string("Key 'first_aid_certification' not found"));
     }

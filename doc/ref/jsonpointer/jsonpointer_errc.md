@@ -4,6 +4,8 @@
 #include <jsoncons_ext/jsonpointer/jsonpointer_error.hpp>
 ```
 
+<br>
+
 The constant integer values scoped by `jsonpointer_errc` define the values for jsonpointer error codes.
 
 ### Member constants

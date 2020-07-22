@@ -6,7 +6,7 @@
 template<
     class CharT,
     class Src=jsoncons::stream_source<CharT>,
-    class Allocator=std::allocator<char>
+    class TempAllocator=std::allocator<char>
 >
 class basic_json_reader 
 ```
@@ -17,7 +17,7 @@ which omits the check for unconsumed non-whitespace characters.
 
 `basic_json_reader` is noncopyable and nonmoveable.
 
-Four specializations for common character types and result types are defined:
+Two specializations for common character types are defined:
 
 Type                       |Definition
 ---------------------------|------------------------------
@@ -35,81 +35,89 @@ string_view_type           |
 #### Constructors
 
     template <class Source>
-    explicit basic_json_reader(Source&& source); // (1)
+    explicit basic_json_reader(Source&& source, 
+                               const TempAllocator& alloc = TempAllocator()); // (1)
 
     template <class Source>
     basic_json_reader(Source&& source, 
-                      const basic_json_decode_options<CharT>& options); // (2)
+                      const basic_json_options<CharT>& options, 
+                      const TempAllocator& alloc = TempAllocator()); // (2)
 
     template <class Source>
     basic_json_reader(Source&& source,
-                      std::function<bool(json_errc,const ser_context&)> err_handler); // (3)
+                      std::function<bool(json_errc,const ser_context&)> err_handler, 
+                      const TempAllocator& alloc = TempAllocator()); // (3)
 
     template <class Source>
     basic_json_reader(Source&& source, 
-                      const basic_json_decode_options<CharT>& options,
-                      std::function<bool(json_errc,const ser_context&)> err_handler); // (4)
+                      const basic_json_options<CharT>& options,
+                      std::function<bool(json_errc,const ser_context&)> err_handler, 
+                      const TempAllocator& alloc = TempAllocator()); // (4)
 
     template <class Source>
     basic_json_reader(Source&& source, 
-                      basic_json_content_handler<CharT>& handler); // (5)
+                      basic_json_visitor<CharT>& visitor, 
+                      const TempAllocator& alloc = TempAllocator()); // (5)
 
     template <class Source>
     basic_json_reader(Source&& source, 
-                      basic_json_content_handler<CharT>& handler,
-                      const basic_json_decode_options<CharT>& options); // (6)
+                      basic_json_visitor<CharT>& visitor,
+                      const basic_json_options<CharT>& options, 
+                      const TempAllocator& alloc = TempAllocator()); // (6)
 
     template <class Source>
     basic_json_reader(Source&& source,
-                      basic_json_content_handler<CharT>& handler,
-                      std::function<bool(json_errc,const ser_context&)> err_handler); // (7)
+                      basic_json_visitor<CharT>& visitor,
+                      std::function<bool(json_errc,const ser_context&)> err_handler, 
+                      const TempAllocator& alloc = TempAllocator()); // (7)
 
     template <class Source>
     basic_json_reader(Source&& source,
-                      basic_json_content_handler<CharT>& handler, 
-                      const basic_json_decode_options<CharT>& options,
-                      std::function<bool(json_errc,const ser_context&)> err_handler); // (8)
+                      basic_json_visitor<CharT>& visitor, 
+                      const basic_json_options<CharT>& options,
+                      std::function<bool(json_errc,const ser_context&)> err_handler, 
+                      const TempAllocator& alloc = TempAllocator()); // (8)
 
-Constructors (1)-(4) use a default [json_content_handler](json_content_handler.md) that discards the JSON parse events, and are for validation only.
+Constructors (1)-(4) use a default [basic_json_visitor](basic_json_visitor.md) that discards the JSON parse events, and are for validation only.
 
-(1) Constructs a `basic_json_reader` that reads from a character sequence or stream `source`, uses default [options](basic_json_decode_options.md) and a default [parse_error_handler](parse_error_handler.md).
+(1) Constructs a `basic_json_reader` that reads from a character sequence or stream `source`, uses default [options](basic_json_options.md) and a default [parse_error_handler](parse_error_handler.md).
 
 (2) Constructs a `basic_json_reader` that reads from a character sequence or stream `source`, 
-uses the specified [options](basic_json_decode_options.md)
+uses the specified [options](basic_json_options.md)
 and a default [parse_error_handler](parse_error_handler.md).
 
 (3) Constructs a `basic_json_reader` that reads from a character sequence or stream `source`, 
-uses default [options](basic_json_decode_options.md)
+uses default [options](basic_json_options.md)
 and a specified [parse_error_handler](parse_error_handler.md).
 
 (4) Constructs a `basic_json_reader` that reads from a character sequence or stream `source`, 
-uses the specified [options](basic_json_decode_options.md)
+uses the specified [options](basic_json_options.md)
 and a specified [parse_error_handler](parse_error_handler.md).
 
-Constructors (5)-(8) take a user supplied [json_content_handler](json_content_handler.md) that receives JSON parse events, such as a [json_decoder](json_decoder). 
+Constructors (5)-(8) take a user supplied [basic_json_visitor](basic_json_visitor.md) that receives JSON parse events, such as a [json_decoder](json_decoder). 
 
 (5) Constructs a `basic_json_reader` that reads from a character sequence or stream `source`,
 emits JSON parse events to the specified 
-[json_content_handler](json_content_handler.md), and uses default [options](basic_json_decode_options.md)
+[basic_json_visitor](basic_json_visitor.md), and uses default [options](basic_json_options.md)
 and a default [parse_error_handler](parse_error_handler.md).
 
 (6) Constructs a `basic_json_reader` that reads from a character sequence or stream `source`,
-emits JSON parse events to the specified [json_content_handler](json_content_handler.md) 
-and uses the specified [options](basic_json_decode_options.md)
+emits JSON parse events to the specified [basic_json_visitor](basic_json_visitor.md) 
+and uses the specified [options](basic_json_options.md)
 and a default [parse_error_handler](parse_error_handler.md).
 
 (7) Constructs a `basic_json_reader` that reads from a character sequence or stream `source`,
-emits JSON parse events to the specified [json_content_handler](json_content_handler.md) 
-and uses default [options](basic_json_decode_options.md)
+emits JSON parse events to the specified [basic_json_visitor](basic_json_visitor.md) 
+and uses default [options](basic_json_options.md)
 and a specified [parse_error_handler](parse_error_handler.md).
 
 (8) Constructs a `basic_json_reader` that reads from a character sequence or stream `source`,
-emits JSON parse events to the specified [json_content_handler](json_content_handler.md) and
-uses the specified [options](basic_json_decode_options.md)
+emits JSON parse events to the specified [basic_json_visitor](basic_json_visitor.md) and
+uses the specified [options](basic_json_options.md)
 and a specified [parse_error_handler](parse_error_handler.md).
 
-Note: It is the programmer's responsibility to ensure that `basic_json_reader` does not outlive any source, 
-content handler, and error handler passed in the constuctor, as `basic_json_reader` holds pointers to but does not own these resources.
+Note: It is the programmer's responsibility to ensure that `basic_json_reader` does not outlive any source or 
+visitor passed in the constuctor, as `basic_json_reader` holds pointers to but does not own these resources.
 
 #### Parameters
 
@@ -124,13 +132,13 @@ Returns `true` when there are no more JSON texts to be read from the stream, `fa
 
     void read(); // (1)
     void read(std::error_code& ec); // (2)
-Reads the next JSON text from the stream and reports JSON events to a [json_content_handler](json_content_handler.md), such as a [json_decoder](json_decoder.md).
+Reads the next JSON text from the stream and reports JSON events to a [basic_json_visitor](basic_json_visitor.md), such as a [json_decoder](json_decoder.md).
 Override (1) throws if parsing fails, or there are any unconsumed non-whitespace characters left in the input.
 Override (2) sets `ec` to a [json_errc](jsoncons::json_errc.md) if parsing fails or if there are any unconsumed non-whitespace characters left in the input.
 
     void read_next()
     void read_next(std::error_code& ec)
-Reads the next JSON text from the stream and reports JSON events to a [json_content_handler](json_content_handler.md), such as a [json_decoder](json_decoder.md).
+Reads the next JSON text from the stream and reports JSON events to a [basic_json_visitor](basic_json_visitor.md), such as a [json_decoder](json_decoder.md).
 Override (1) throws [ser_error](ser_error.md) if parsing fails.
 Override (2) sets `ec` to a [json_errc](jsoncons::json_errc.md) if parsing fails.
 
@@ -139,13 +147,13 @@ Override (2) sets `ec` to a [json_errc](jsoncons::json_errc.md) if parsing fails
 Override (1) throws if there are any unconsumed non-whitespace characters in the input.
 Override (2) sets `ec` to a [json_errc](jsoncons::json_errc.md) if there are any unconsumed non-whitespace characters left in the input.
 
-    size_t buffer_length() const
+    std::size_t buffer_length() const
 
-    void buffer_length(size_t length)
+    void buffer_length(std::size_t length)
 
-    size_t line() const
+    std::size_t line() const
 
-    size_t column() const
+    std::size_t column() const
 
 ### Examples
 
@@ -223,8 +231,8 @@ while (!reader.eof())
     reader.read_next();
     if (!reader.eof())
     {
-        json val = decoder.get_result();
-        std::cout << val << std::endl;
+        json j = decoder.get_result();
+        std::cout << j << std::endl;
     }
 }
 ```

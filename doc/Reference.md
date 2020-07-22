@@ -13,7 +13,7 @@ All core jsoncons classes and functions are in namespace `jsoncons`.
 
 #### Streaming API for JSON (StAJ)
 
-[staj_reader](ref/staj_reader.md)  
+[staj_cursor](ref/staj_cursor.md)  
 [staj_event](ref/staj_event.md)  
 [staj_object_iterator](ref/staj_object_iterator.md)  
 [staj_array_iterator](ref/staj_array_iterator.md)  
@@ -23,15 +23,15 @@ All core jsoncons classes and functions are in namespace `jsoncons`.
 
 #### Push Parsing API
 
-[json_content_handler](ref/json_content_handler.md)  
+[basic_json_visitor](ref/basic_json_visitor.md)  
 
 [json_parser](ref/json_parser.md)  
 [basic_json_reader](ref/basic_json_reader.md)  
 
 [json_decoder](ref/json_decoder.md)  
 
-[json_filter](ref/json_filter.md)  
-[rename_object_member_filter](ref/rename_object_member_filter.md)  
+[basic_json_filter](ref/basic_json_filter.md)  
+[rename_object_key_filter](ref/rename_object_key_filter.md)  
 
 ### Extensions
 
@@ -41,15 +41,13 @@ All core jsoncons classes and functions are in namespace `jsoncons`.
 
 #### [jsonpath](ref/jsonpath/jsonpath.md)
 
+#### [bson](ref/bson/bson.md)
+
 #### [cbor](ref/cbor/cbor.md)
 
 #### [msgpack](ref/msgpack/msgpack.md)
 
 #### [ubjson](ref/ubjson/ubjson.md)
-
-#### [msgpack](ref/msgpack/msgpack.md)
-
-#### [bson](ref/bson/bson.md)
 
 ### Tutorials
 

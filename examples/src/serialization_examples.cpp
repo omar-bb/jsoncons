@@ -67,9 +67,9 @@ void serialization_example2()
 
     json val;
 
-    val["verts"] = json::array{1, 2, 3};
-    val["normals"] = json::array{1, 0, 1};
-    val["uvs"] = json::array{0, 0, 1, 1};
+    val["verts"] = json(json_array_arg, {1, 2, 3});
+    val["normals"] = json(json_array_arg, {1, 0, 1});
+    val["uvs"] = json(json_array_arg, {0, 0, 1, 1});
 
     std::cout << "Default object-array same line options" << std::endl;
     std::cout << pretty_print(val) << std::endl;
@@ -180,15 +180,15 @@ void serialization_example3()
 void serialization_example4()
 {
     json val;
-    val["data"]["id"] = json::array{0,1,2,3,4,5,6,7};
-    val["data"]["item"] = json::array{json::array{2},
-                                      json::array{4,5,2,3},
-                                      json::array{4},
-                                      json::array{4,5,2,3},
-                                      json::array{2},
-                                      json::array{4,5,3},
-                                      json::array{2},
-                                      json::array{4,3}};
+    val["data"]["id"] = json(json_array_arg, {0,1,2,3,4,5,6,7});
+    val["data"]["item"] = json(json_array_arg, {json(json_array_arg, {2}),
+                                      json(json_array_arg, {4,5,2,3}),
+                                      json(json_array_arg, {4}),
+                                      json(json_array_arg, {4,5,2,3}),
+                                      json(json_array_arg, {2}),
+                                      json(json_array_arg, {4,5,3}),
+                                      json(json_array_arg, {2}),
+                                      json(json_array_arg, {4,3})});
 
     std::cout << "Default array-array split line options" << std::endl;
     std::cout << pretty_print(val) << std::endl;
@@ -340,7 +340,7 @@ void bignum_serialization_examples1()
 {
     std::string s = "-18446744073709551617";
 
-    json j(bignum(s.c_str()));
+    json j(bigint::from_string(s.c_str()));
 
     std::cout << "(default) ";
     j.dump(std::cout);
@@ -402,12 +402,12 @@ void bignum_access_examples()
     double d = j.as<double>();
     std::cout << "(2) " << std::setprecision(17) << d << "\n\n";
 
-    // Access as jsoncons::bignum
-    jsoncons::bignum bn = j.as<jsoncons::bignum>();
+    // Access as jsoncons::bigint
+    jsoncons::bigint bn = j.as<jsoncons::bigint>();
     std::cout << "(3) " << bn << "\n\n";
 
     // If your compiler supports extended integral types for which std::numeric_limits is specialized 
-#if (defined(__GNUC__) || defined(__clang__)) && (!defined(__STRICT_ANSI__) && defined(_GLIBCXX_USE_INT128))
+#if (defined(__GNUC__) || defined(__clang__)) && (!defined(__ALL_ANSI__) && defined(_GLIBCXX_USE_INT128))
     __int128 i = j.as<__int128>();
     std::cout << "(4) " << i << "\n\n";
 #endif

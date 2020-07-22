@@ -13,44 +13,46 @@
 #include <memory>
 #include <utility> // std::move
 #include <jsoncons/json_exception.hpp>
-#include <jsoncons/json_content_handler.hpp>
-#include <jsoncons/config/binary_detail.hpp>
-#include <jsoncons/result.hpp>
+#include <jsoncons/json_visitor.hpp>
+#include <jsoncons/config/jsoncons_config.hpp>
+#include <jsoncons/sink.hpp>
 #include <jsoncons/detail/parse_number.hpp>
 #include <jsoncons_ext/ubjson/ubjson_detail.hpp>
 #include <jsoncons_ext/ubjson/ubjson_error.hpp>
+#include <jsoncons_ext/ubjson/ubjson_options.hpp>
 
 namespace jsoncons { namespace ubjson {
 
 enum class ubjson_container_type {object, indefinite_length_object, array, indefinite_length_array};
 
-template<class Result=jsoncons::binary_stream_result>
-class basic_ubjson_encoder final : public basic_json_content_handler<char>
+template<class Sink=jsoncons::binary_stream_sink,class Allocator=std::allocator<char>>
+class basic_ubjson_encoder final : public basic_json_visitor<char>
 {
 
     enum class decimal_parse_state { start, integer, exp1, exp2, fraction1 };
 public:
-    using typename basic_json_content_handler<char>::string_view_type;
-    typedef Result result_type;
+    using allocator_type = Allocator;
+    using typename basic_json_visitor<char>::string_view_type;
+    using sink_type = Sink;
 
 private:
     struct stack_item
     {
         ubjson_container_type type_;
-        size_t length_;
-        size_t count_;
+        std::size_t length_;
+        std::size_t count_;
 
-        stack_item(ubjson_container_type type, size_t length = 0)
+        stack_item(ubjson_container_type type, std::size_t length = 0) noexcept
            : type_(type), length_(length), count_(0)
         {
         }
 
-        size_t length() const
+        std::size_t length() const
         {
             return length_;
         }
 
-        size_t count() const
+        std::size_t count() const
         {
             return count_;
         }
@@ -66,25 +68,41 @@ private:
         }
 
     };
+
+    Sink sink_;
+    const ubjson_encode_options options_;
+    allocator_type alloc_;
+
     std::vector<stack_item> stack_;
-    Result result_;
+    int nesting_depth_;
 
     // Noncopyable and nonmoveable
     basic_ubjson_encoder(const basic_ubjson_encoder&) = delete;
     basic_ubjson_encoder& operator=(const basic_ubjson_encoder&) = delete;
 public:
-    basic_ubjson_encoder(result_type result)
-       : result_(std::move(result))
+    basic_ubjson_encoder(Sink&& sink, 
+                         const Allocator& alloc = Allocator())
+       : basic_ubjson_encoder(std::forward<Sink>(sink), ubjson_encode_options(), alloc)
     {
     }
 
-    ~basic_ubjson_encoder()
+    explicit basic_ubjson_encoder(Sink&& sink, 
+                                  const ubjson_encode_options& options, 
+                                  const Allocator& alloc = Allocator())
+       : sink_(std::forward<Sink>(sink)),
+         options_(options),
+         alloc_(alloc),
+         nesting_depth_(0)
     {
-        try
+    }
+
+    ~basic_ubjson_encoder() noexcept
+    {
+        JSONCONS_TRY
         {
-            result_.flush();
+            sink_.flush();
         }
-        catch (...)
+        JSONCONS_CATCH(...)
         {
         }
     }
@@ -92,45 +110,59 @@ public:
 private:
     // Implementing methods
 
-    void do_flush() override
+    void visit_flush() override
     {
-        result_.flush();
+        sink_.flush();
     }
 
-    bool do_begin_object(semantic_tag, const ser_context&) override
+    bool visit_begin_object(semantic_tag, const ser_context&, std::error_code& ec) override
     {
+        if (JSONCONS_UNLIKELY(++nesting_depth_ > options_.max_nesting_depth()))
+        {
+            ec = ubjson_errc::max_nesting_depth_exceeded;
+            return false;
+        } 
         stack_.push_back(stack_item(ubjson_container_type::indefinite_length_object));
-        result_.push_back(jsoncons::ubjson::detail::ubjson_format::start_object_marker);
+        sink_.push_back(jsoncons::ubjson::detail::ubjson_format::start_object_marker);
 
         return true;
     }
 
-    bool do_begin_object(size_t length, semantic_tag, const ser_context&) override
+    bool visit_begin_object(std::size_t length, semantic_tag, const ser_context&, std::error_code& ec) override
     {
+        if (JSONCONS_UNLIKELY(++nesting_depth_ > options_.max_nesting_depth()))
+        {
+            ec = ubjson_errc::max_nesting_depth_exceeded;
+            return false;
+        } 
         stack_.push_back(stack_item(ubjson_container_type::object, length));
-        result_.push_back(jsoncons::ubjson::detail::ubjson_format::start_object_marker);
-        result_.push_back(jsoncons::ubjson::detail::ubjson_format::count_marker);
+        sink_.push_back(jsoncons::ubjson::detail::ubjson_format::start_object_marker);
+        sink_.push_back(jsoncons::ubjson::detail::ubjson_format::count_marker);
         put_length(length);
 
         return true;
     }
 
-    bool do_end_object(const ser_context&) override
+    bool visit_end_object(const ser_context&, std::error_code& ec) override
     {
         JSONCONS_ASSERT(!stack_.empty());
+        --nesting_depth_;
+
         if (stack_.back().is_indefinite_length())
         {
-            result_.push_back(jsoncons::ubjson::detail::ubjson_format::end_object_marker);
+            sink_.push_back(jsoncons::ubjson::detail::ubjson_format::end_object_marker);
         }
         else
         {
             if (stack_.back().count() < stack_.back().length())
             {
-                throw ser_error(ubjson_errc::too_few_items);
+                ec = ubjson_errc::too_few_items;
+                return false;
             }
             if (stack_.back().count() > stack_.back().length())
             {
-                throw ser_error(ubjson_errc::too_many_items);
+                ec = ubjson_errc::too_many_items;
+                return false;
             }
         }
         stack_.pop_back();
@@ -138,40 +170,54 @@ private:
         return true;
     }
 
-    bool do_begin_array(semantic_tag, const ser_context&) override
+    bool visit_begin_array(semantic_tag, const ser_context&, std::error_code& ec) override
     {
+        if (JSONCONS_UNLIKELY(++nesting_depth_ > options_.max_nesting_depth()))
+        {
+            ec = ubjson_errc::max_nesting_depth_exceeded;
+            return false;
+        } 
         stack_.push_back(stack_item(ubjson_container_type::indefinite_length_array));
-        result_.push_back(jsoncons::ubjson::detail::ubjson_format::start_array_marker);
+        sink_.push_back(jsoncons::ubjson::detail::ubjson_format::start_array_marker);
 
         return true;
     }
 
-    bool do_begin_array(size_t length, semantic_tag, const ser_context&) override
+    bool visit_begin_array(std::size_t length, semantic_tag, const ser_context&, std::error_code& ec) override
     {
+        if (JSONCONS_UNLIKELY(++nesting_depth_ > options_.max_nesting_depth()))
+        {
+            ec = ubjson_errc::max_nesting_depth_exceeded;
+            return false;
+        } 
         stack_.push_back(stack_item(ubjson_container_type::array, length));
-        result_.push_back(jsoncons::ubjson::detail::ubjson_format::start_array_marker);
-        result_.push_back(jsoncons::ubjson::detail::ubjson_format::count_marker);
+        sink_.push_back(jsoncons::ubjson::detail::ubjson_format::start_array_marker);
+        sink_.push_back(jsoncons::ubjson::detail::ubjson_format::count_marker);
         put_length(length);
 
         return true;
     }
 
-    bool do_end_array(const ser_context&) override
+    bool visit_end_array(const ser_context&, std::error_code& ec) override
     {
         JSONCONS_ASSERT(!stack_.empty());
+        --nesting_depth_;
+
         if (stack_.back().is_indefinite_length())
         {
-            result_.push_back(jsoncons::ubjson::detail::ubjson_format::end_array_marker);
+            sink_.push_back(jsoncons::ubjson::detail::ubjson_format::end_array_marker);
         }
         else
         {
             if (stack_.back().count() < stack_.back().length())
             {
-                throw ser_error(ubjson_errc::too_few_items);
+                ec = ubjson_errc::too_few_items;
+                return false;
             }
             if (stack_.back().count() > stack_.back().length())
             {
-                throw ser_error(ubjson_errc::too_many_items);
+                ec = ubjson_errc::too_many_items;
+                return false;
             }
         }
         stack_.pop_back();
@@ -179,125 +225,129 @@ private:
         return true;
     }
 
-    bool do_name(const string_view_type& name, const ser_context&) override
+    bool visit_key(const string_view_type& name, const ser_context&, std::error_code& ec) override
     {
-        auto result = unicons::validate(name.begin(), name.end());
-        if (result.ec != unicons::conv_errc())
+        auto sink = unicons::validate(name.begin(), name.end());
+        if (sink.ec != unicons::conv_errc())
         {
-            throw ser_error(ubjson_errc::invalid_utf8_text_string);
+            ec = ubjson_errc::invalid_utf8_text_string;
+            return false;
         }
 
         put_length(name.length());
 
         for (auto c : name)
         {
-            result_.push_back(c);
+            sink_.push_back(c);
         }
         return true;
     }
 
-    bool do_null_value(semantic_tag, const ser_context&) override
+    bool visit_null(semantic_tag, const ser_context&, std::error_code&) override
     {
         // nil
-        jsoncons::detail::to_big_endian(static_cast<uint8_t>(jsoncons::ubjson::detail::ubjson_format::null_type), std::back_inserter(result_));
+        jsoncons::detail::native_to_big(static_cast<uint8_t>(jsoncons::ubjson::detail::ubjson_format::null_type), std::back_inserter(sink_));
         end_value();
         return true;
     }
 
-    bool do_string_value(const string_view_type& sv, semantic_tag tag, const ser_context&) override
+    bool visit_string(const string_view_type& sv, semantic_tag tag, const ser_context&, std::error_code& ec) override
     {
         switch (tag)
         {
             case semantic_tag::bigint:
             case semantic_tag::bigdec:
             {
-                result_.push_back(jsoncons::ubjson::detail::ubjson_format::high_precision_number_type);
+                sink_.push_back(jsoncons::ubjson::detail::ubjson_format::high_precision_number_type);
                 break;
             }
             default:
             {
-                result_.push_back(jsoncons::ubjson::detail::ubjson_format::string_type);
+                sink_.push_back(jsoncons::ubjson::detail::ubjson_format::string_type);
                 break;
             }
         }
 
-        auto result = unicons::validate(sv.begin(), sv.end());
-        if (result.ec != unicons::conv_errc())
+        auto sink = unicons::validate(sv.begin(), sv.end());
+        if (sink.ec != unicons::conv_errc())
         {
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Illegal unicode"));
+            ec = ubjson_errc::invalid_utf8_text_string;
+            return false;
         }
 
         put_length(sv.length());
 
         for (auto c : sv)
         {
-            result_.push_back(c);
+            sink_.push_back(c);
         }
 
         end_value();
         return true;
     }
 
-    void put_length(size_t length)
+    void put_length(std::size_t length)
     {
         if (length <= (std::numeric_limits<uint8_t>::max)())
         {
-            result_.push_back('U');
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(length), std::back_inserter(result_));
+            sink_.push_back('U');
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(length), std::back_inserter(sink_));
         }
-        else if (length <= (size_t)(std::numeric_limits<int16_t>::max)())
+        else if (length <= (std::size_t)(std::numeric_limits<int16_t>::max)())
         {
-            result_.push_back('I');
-            jsoncons::detail::to_big_endian(static_cast<uint16_t>(length), std::back_inserter(result_));
+            sink_.push_back('I');
+            jsoncons::detail::native_to_big(static_cast<uint16_t>(length), std::back_inserter(sink_));
         }
         else if (length <= (uint32_t)(std::numeric_limits<int32_t>::max)())
         {
-            result_.push_back('l');
-            jsoncons::detail::to_big_endian(static_cast<uint32_t>(length),std::back_inserter(result_));
+            sink_.push_back('l');
+            jsoncons::detail::native_to_big(static_cast<uint32_t>(length),std::back_inserter(sink_));
         }
         else if (length <= (uint64_t)(std::numeric_limits<int64_t>::max)())
         {
-            result_.push_back('L');
-            jsoncons::detail::to_big_endian(static_cast<uint32_t>(length),std::back_inserter(result_));
+            sink_.push_back('L');
+            jsoncons::detail::native_to_big(static_cast<uint32_t>(length),std::back_inserter(sink_));
         }
     }
 
-    bool do_byte_string_value(const byte_string_view& b, 
+    bool visit_byte_string(const byte_string_view& b, 
                               semantic_tag, 
-                              const ser_context&) override
+                              const ser_context&,
+                              std::error_code&) override
     {
 
-        const size_t length = b.length();
-        result_.push_back(jsoncons::ubjson::detail::ubjson_format::start_array_marker);
-        jsoncons::detail::to_big_endian(static_cast<uint8_t>(jsoncons::ubjson::detail::ubjson_format::type_marker), std::back_inserter(result_));
-        jsoncons::detail::to_big_endian(static_cast<uint8_t>(jsoncons::ubjson::detail::ubjson_format::uint8_type), std::back_inserter(result_));
+        const size_t length = b.size();
+        sink_.push_back(jsoncons::ubjson::detail::ubjson_format::start_array_marker);
+        jsoncons::detail::native_to_big(static_cast<uint8_t>(jsoncons::ubjson::detail::ubjson_format::type_marker), std::back_inserter(sink_));
+        jsoncons::detail::native_to_big(static_cast<uint8_t>(jsoncons::ubjson::detail::ubjson_format::uint8_type), std::back_inserter(sink_));
         put_length(length);
 
         for (auto c : b)
         {
-            result_.push_back(c);
+            sink_.push_back(c);
         }
 
         end_value();
         return true;
     }
 
-    bool do_double_value(double val, 
+    bool visit_double(double val, 
                          semantic_tag,
-                         const ser_context&) override
+                         const ser_context&,
+                         std::error_code&) override
     {
         float valf = (float)val;
         if ((double)valf == val)
         {
             // float 32
-            result_.push_back(static_cast<uint8_t>(jsoncons::ubjson::detail::ubjson_format::float32_type));
-            jsoncons::detail::to_big_endian(valf,std::back_inserter(result_));
+            sink_.push_back(static_cast<uint8_t>(jsoncons::ubjson::detail::ubjson_format::float32_type));
+            jsoncons::detail::native_to_big(valf,std::back_inserter(sink_));
         }
         else
         {
             // float 64
-            result_.push_back(static_cast<uint8_t>(jsoncons::ubjson::detail::ubjson_format::float64_type));
-            jsoncons::detail::to_big_endian(val,std::back_inserter(result_));
+            sink_.push_back(static_cast<uint8_t>(jsoncons::ubjson::detail::ubjson_format::float64_type));
+            jsoncons::detail::native_to_big(val,std::back_inserter(sink_));
         }
 
         // write double
@@ -306,35 +356,36 @@ private:
         return true;
     }
 
-    bool do_int64_value(int64_t val, 
+    bool visit_int64(int64_t val, 
                         semantic_tag, 
-                        const ser_context&) override
+                        const ser_context&,
+                        std::error_code&) override
     {
         if (val >= 0)
         {
             if (val <= (std::numeric_limits<uint8_t>::max)())
             {
                 // uint 8 stores a 8-bit unsigned integer
-                result_.push_back(jsoncons::ubjson::detail::ubjson_format::uint8_type);
-                jsoncons::detail::to_big_endian(static_cast<uint8_t>(val),std::back_inserter(result_));
+                sink_.push_back(jsoncons::ubjson::detail::ubjson_format::uint8_type);
+                jsoncons::detail::native_to_big(static_cast<uint8_t>(val),std::back_inserter(sink_));
             }
             else if (val <= (std::numeric_limits<int16_t>::max)())
             {
                 // uint 16 stores a 16-bit big-endian unsigned integer
-                result_.push_back(jsoncons::ubjson::detail::ubjson_format::int16_type);
-                jsoncons::detail::to_big_endian(static_cast<int16_t>(val),std::back_inserter(result_));
+                sink_.push_back(jsoncons::ubjson::detail::ubjson_format::int16_type);
+                jsoncons::detail::native_to_big(static_cast<int16_t>(val),std::back_inserter(sink_));
             }
             else if (val <= (std::numeric_limits<int32_t>::max)())
             {
                 // uint 32 stores a 32-bit big-endian unsigned integer
-                result_.push_back(jsoncons::ubjson::detail::ubjson_format::int32_type);
-                jsoncons::detail::to_big_endian(static_cast<int32_t>(val),std::back_inserter(result_));
+                sink_.push_back(jsoncons::ubjson::detail::ubjson_format::int32_type);
+                jsoncons::detail::native_to_big(static_cast<int32_t>(val),std::back_inserter(sink_));
             }
             else if (val <= (std::numeric_limits<int64_t>::max)())
             {
                 // int 64 stores a 64-bit big-endian signed integer
-                result_.push_back(jsoncons::ubjson::detail::ubjson_format::int64_type);
-                jsoncons::detail::to_big_endian(static_cast<int64_t>(val),std::back_inserter(result_));
+                sink_.push_back(jsoncons::ubjson::detail::ubjson_format::int64_type);
+                jsoncons::detail::native_to_big(static_cast<int64_t>(val),std::back_inserter(sink_));
             }
             else
             {
@@ -346,64 +397,65 @@ private:
             if (val >= (std::numeric_limits<int8_t>::lowest)())
             {
                 // int 8 stores a 8-bit signed integer
-                result_.push_back(jsoncons::ubjson::detail::ubjson_format::int8_type);
-                jsoncons::detail::to_big_endian(static_cast<int8_t>(val),std::back_inserter(result_));
+                sink_.push_back(jsoncons::ubjson::detail::ubjson_format::int8_type);
+                jsoncons::detail::native_to_big(static_cast<int8_t>(val),std::back_inserter(sink_));
             }
             else if (val >= (std::numeric_limits<int16_t>::lowest)())
             {
                 // int 16 stores a 16-bit big-endian signed integer
-                result_.push_back(jsoncons::ubjson::detail::ubjson_format::int16_type);
-                jsoncons::detail::to_big_endian(static_cast<int16_t>(val),std::back_inserter(result_));
+                sink_.push_back(jsoncons::ubjson::detail::ubjson_format::int16_type);
+                jsoncons::detail::native_to_big(static_cast<int16_t>(val),std::back_inserter(sink_));
             }
             else if (val >= (std::numeric_limits<int32_t>::lowest)())
             {
                 // int 32 stores a 32-bit big-endian signed integer
-                result_.push_back(jsoncons::ubjson::detail::ubjson_format::int32_type);
-                jsoncons::detail::to_big_endian(static_cast<int32_t>(val),std::back_inserter(result_));
+                sink_.push_back(jsoncons::ubjson::detail::ubjson_format::int32_type);
+                jsoncons::detail::native_to_big(static_cast<int32_t>(val),std::back_inserter(sink_));
             }
             else if (val >= (std::numeric_limits<int64_t>::lowest)())
             {
                 // int 64 stores a 64-bit big-endian signed integer
-                result_.push_back(jsoncons::ubjson::detail::ubjson_format::int64_type);
-                jsoncons::detail::to_big_endian(static_cast<int64_t>(val),std::back_inserter(result_));
+                sink_.push_back(jsoncons::ubjson::detail::ubjson_format::int64_type);
+                jsoncons::detail::native_to_big(static_cast<int64_t>(val),std::back_inserter(sink_));
             }
         }
         end_value();
         return true;
     }
 
-    bool do_uint64_value(uint64_t val, 
+    bool visit_uint64(uint64_t val, 
                          semantic_tag, 
-                         const ser_context&) override
+                         const ser_context&,
+                         std::error_code&) override
     {
         if (val <= (std::numeric_limits<uint8_t>::max)())
         {
-            result_.push_back(jsoncons::ubjson::detail::ubjson_format::uint8_type);
-            jsoncons::detail::to_big_endian(static_cast<uint8_t>(val),std::back_inserter(result_));
+            sink_.push_back(jsoncons::ubjson::detail::ubjson_format::uint8_type);
+            jsoncons::detail::native_to_big(static_cast<uint8_t>(val),std::back_inserter(sink_));
         }
         else if (val <= (std::numeric_limits<int16_t>::max)())
         {
-            result_.push_back(jsoncons::ubjson::detail::ubjson_format::int16_type);
-            jsoncons::detail::to_big_endian(static_cast<int16_t>(val),std::back_inserter(result_));
+            sink_.push_back(jsoncons::ubjson::detail::ubjson_format::int16_type);
+            jsoncons::detail::native_to_big(static_cast<int16_t>(val),std::back_inserter(sink_));
         }
         else if (val <= (std::numeric_limits<int32_t>::max)())
         {
-            result_.push_back(jsoncons::ubjson::detail::ubjson_format::int32_type);
-            jsoncons::detail::to_big_endian(static_cast<int32_t>(val),std::back_inserter(result_));
+            sink_.push_back(jsoncons::ubjson::detail::ubjson_format::int32_type);
+            jsoncons::detail::native_to_big(static_cast<int32_t>(val),std::back_inserter(sink_));
         }
         else if (val <= (uint64_t)(std::numeric_limits<int64_t>::max)())
         {
-            result_.push_back(jsoncons::ubjson::detail::ubjson_format::int64_type);
-            jsoncons::detail::to_big_endian(static_cast<int64_t>(val),std::back_inserter(result_));
+            sink_.push_back(jsoncons::ubjson::detail::ubjson_format::int64_type);
+            jsoncons::detail::native_to_big(static_cast<int64_t>(val),std::back_inserter(sink_));
         }
         end_value();
         return true;
     }
 
-    bool do_bool_value(bool val, semantic_tag, const ser_context&) override
+    bool visit_bool(bool val, semantic_tag, const ser_context&, std::error_code&) override
     {
         // true and false
-        result_.push_back(static_cast<uint8_t>(val ? jsoncons::ubjson::detail::ubjson_format::true_type : jsoncons::ubjson::detail::ubjson_format::false_type));
+        sink_.push_back(static_cast<uint8_t>(val ? jsoncons::ubjson::detail::ubjson_format::true_type : jsoncons::ubjson::detail::ubjson_format::false_type));
 
         end_value();
         return true;
@@ -418,12 +470,12 @@ private:
     }
 };
 
-typedef basic_ubjson_encoder<jsoncons::binary_stream_result> ubjson_stream_encoder;
-typedef basic_ubjson_encoder<jsoncons::bytes_result> ubjson_bytes_encoder;
+using ubjson_stream_encoder = basic_ubjson_encoder<jsoncons::binary_stream_sink>;
+using ubjson_bytes_encoder = basic_ubjson_encoder<jsoncons::bytes_sink<std::vector<uint8_t>>>;
 
 #if !defined(JSONCONS_NO_DEPRECATED)
-template<class Result=jsoncons::binary_stream_result>
-using basic_ubjson_serializer = basic_ubjson_encoder<Result>; 
+template<class Sink=jsoncons::binary_stream_sink>
+using basic_ubjson_serializer = basic_ubjson_encoder<Sink>; 
 
 JSONCONS_DEPRECATED_MSG("Instead, use ubjson_stream_encoder") typedef ubjson_stream_encoder ubjson_encoder;
 JSONCONS_DEPRECATED_MSG("Instead, use ubjson_stream_encoder") typedef ubjson_stream_encoder ubjson_serializer;

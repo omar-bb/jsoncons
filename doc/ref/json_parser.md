@@ -18,7 +18,7 @@ and `source_exhausted()` will return `true`. Additional JSON text can be supplie
 
 A typical application will repeatedly call the `parse_some` function 
 until `stopped()` returns true. A stopped state indicates that a content
-handler function returned `false`, an error occured, or a complete JSON 
+visitor function returned `false`, an error occured, or a complete JSON 
 text has been consumed. If the latter, `done() `will return `true`.
   
 As an alternative to repeatedly calling `parse_some()` until `stopped()`
@@ -44,24 +44,24 @@ and by the pull parser [basic_json_cursor](basic_json_cursor.md).
     json_parser(const json_decode_options& options, 
                 std::function<bool(json_errc,const ser_context&)> err_handler); // (4)
 
-(1) Constructs a `json_parser` that uses default [basic_json_decode_options](basic_json_decode_options.md)
+(1) Constructs a `json_parser` that uses default [basic_json_options](basic_json_options.md)
 and a default [parse_error_handler](parse_error_handler.md).
 
-(2) Constructs a `json_parser` that uses the specified [basic_json_decode_options](basic_json_decode_options.md)
+(2) Constructs a `json_parser` that uses the specified [basic_json_options](basic_json_options.md)
 and a default [parse_error_handler](parse_error_handler.md).
 
-(3) Constructs a `json_parser` that uses default [basic_json_decode_options](basic_json_decode_options.md)
+(3) Constructs a `json_parser` that uses default [basic_json_options](basic_json_options.md)
 and a specified [parse_error_handler](parse_error_handler.md).
 
-(4) Constructs a `json_parser` that uses the specified [basic_json_decode_options](basic_json_decode_options.md)
+(4) Constructs a `json_parser` that uses the specified [basic_json_options](basic_json_options.md)
 and a specified [parse_error_handler](parse_error_handler.md).
 
-Note: It is the programmer's responsibility to ensure that `json_reader` does not outlive any error handler passed in the constuctor.
+Note: It is the programmer's responsibility to ensure that `json_reader` does not outlive any error visitor passed in the constuctor.
 
 #### Member functions
 
     void update(const string_view_type& sv)
-    void update(const char* data, size_t length)
+    void update(const char* data, std::size_t length)
 Update the parser with a chunk of JSON
 
     bool done() const
@@ -69,7 +69,7 @@ Returns `true` when the parser has consumed a complete JSON text, `false` otherw
 
     bool stopped() const
 Returns `true` if the parser is stopped, `false` otherwise.
-The parser may enter a stopped state as a result of a content handler
+The parser may enter a stopped state as a result of a visitor
 function returning `false`, an error occurred,
 or after having consumed a complete JSON text.
 
@@ -79,44 +79,44 @@ Returns `true` if the parser is finished parsing, `false` otherwise.
     bool source_exhausted() const
 Returns `true` if the input in the source buffer has been exhausted, `false` otherwise
 
-    void parse_some(json_content_handler& handler)
+    void parse_some(json_visitor& visitor)
 Parses the source until a complete json text has been consumed or the source has been exhausted.
-Parse events are sent to the supplied `handler`.
-Throws [ser_error](ser_error.md) if parsing fails.
+Parse events are sent to the supplied `visitor`.
+Throws a [ser_error](ser_error.md) if parsing fails.
 
-    void parse_some(json_content_handler<CharT>& handler,
+    void parse_some(json_visitor<CharT>& visitor,
                     std::error_code& ec)
 Parses the source until a complete json text has been consumed or the source has been exhausted.
-Parse events are sent to the supplied `handler`.
+Parse events are sent to the supplied `visitor`.
 Sets `ec` to a [json_errc](jsoncons::json_errc.md) if parsing fails.
 
-    void finish_parse(json_content_handler<CharT>& handler)
+    void finish_parse(json_visitor<CharT>& visitor)
 Called after `source_exhausted()` is `true` and there is no more input. 
-Repeatedly calls `parse_some(handler)` until `finished()` returns `true`
-Throws [ser_error](ser_error.md) if parsing fails.
+Repeatedly calls `parse_some(visitor)` until `finished()` returns `true`
+Throws a [ser_error](ser_error.md) if parsing fails.
 
-    void finish_parse(json_content_handler<CharT>& handler,
+    void finish_parse(json_visitor<CharT>& visitor,
                    std::error_code& ec)
 Called after `source_exhausted()` is `true` and there is no more input. 
-Repeatedly calls `parse_some(handler)` until `finished()` returns `true`
+Repeatedly calls `parse_some(visitor)` until `finished()` returns `true`
 Sets `ec` to a [json_errc](jsoncons::json_errc.md) if parsing fails.
 
     void skip_bom()
-Reads the next JSON text from the stream and reports JSON events to a [json_content_handler](json_content_handler.md), such as a [json_decoder](json_decoder.md).
-Throws [ser_error](ser_error.md) if parsing fails.
+Reads the next JSON text from the stream and reports JSON events to a [basic_json_visitor](basic_json_visitor.md), such as a [json_decoder](json_decoder.md).
+Throws a [ser_error](ser_error.md) if parsing fails.
 
     void check_done()
 Throws if there are any unconsumed non-whitespace characters in the input.
-Throws [ser_error](ser_error.md) if parsing fails.
+Throws a [ser_error](ser_error.md) if parsing fails.
 
     void check_done(std::error_code& ec)
 Sets `ec` to a [json_errc](jsoncons::json_errc.md) if parsing fails.
 
-    size_t reset() const
+    std::size_t reset() const
 Resets the state of the parser to its initial state. In this state
 `stopped()` returns `false` and `done()` returns `false`.
 
-    size_t restart() const
+    std::size_t restart() const
 Resets the `stopped` state of the parser to `false`, allowing parsing
 to continue.
 
