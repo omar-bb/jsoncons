@@ -653,8 +653,8 @@ namespace jsoncons {
                              std::error_code&) = 0;
 
         virtual bool visit_null(semantic_tag tag, 
-                             const ser_context& context, 
-                             std::error_code& ec) = 0;
+                                const ser_context& context, 
+                                std::error_code& ec) = 0;
 
         virtual bool visit_bool(bool value, 
                              semantic_tag tag, 

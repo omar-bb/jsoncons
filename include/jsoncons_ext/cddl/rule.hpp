@@ -7,7 +7,7 @@
 #ifndef JSONCONS_CDDL_RULE_HPP
 #define JSONCONS_CDDL_RULE_HPP
 
-#include <jsoncons/staj_reader.hpp>
+#include <jsoncons/staj_cursor.hpp>
 #include <jsoncons_ext/cddl/cddl_error.hpp>
 #include <memory>
 #include <unordered_map>
@@ -56,7 +56,7 @@ public:
 
     virtual ~rule_base() = default;
 
-    virtual cddl_errc validate(const rule_dictionary&, staj_reader&) = 0;
+    virtual cddl_errc validate(const rule_dictionary&, staj_cursor&) = 0;
 
     virtual bool accept_event(const staj_event&) 
     {
@@ -112,7 +112,7 @@ public:
 
     virtual ~default_rule() = default;
 
-    virtual cddl_errc validate(const rule_dictionary&, staj_reader&)
+    virtual cddl_errc validate(const rule_dictionary&, staj_cursor&)
     {
         std::cout << "default validate \n";
         return cddl_errc();
@@ -130,7 +130,7 @@ public:
     tstr_rule& operator=(const tstr_rule&) = default;
     tstr_rule& operator=(tstr_rule&&) = default;
 
-    cddl_errc validate(const rule_dictionary&, staj_reader& reader) override
+    cddl_errc validate(const rule_dictionary&, staj_cursor& reader) override
     {
         const staj_event& event = reader.current();
 
@@ -167,7 +167,7 @@ public:
     uint_rule& operator=(const uint_rule&) = default;
     uint_rule& operator=(uint_rule&&) = default;
 
-    virtual cddl_errc validate(const rule_dictionary&, staj_reader& reader)
+    virtual cddl_errc validate(const rule_dictionary&, staj_cursor& reader)
     {
         std::cout << "Expect unsigned integer " << (int)reader.current().event_type() << "\n";
         switch (reader.current().event_type())
@@ -210,7 +210,7 @@ public:
     int_rule& operator=(const int_rule&) = default;
     int_rule& operator=(int_rule&&) = default;
 
-    virtual cddl_errc validate(const rule_dictionary&, staj_reader& reader)
+    virtual cddl_errc validate(const rule_dictionary&, staj_cursor& reader)
     {
         std::cout << "Expect unsigned integer " << (int)reader.current().event_type() << "\n";
         switch (reader.current().event_type())
@@ -245,7 +245,7 @@ public:
     float_rule& operator=(const float_rule&) = default;
     float_rule& operator=(float_rule&&) = default;
 
-    virtual cddl_errc validate(const rule_dictionary&, staj_reader& reader)
+    virtual cddl_errc validate(const rule_dictionary&, staj_cursor& reader)
     {
         std::cout << "Expect unsigned integer " << (int)reader.current().event_type() << "\n";
         switch (reader.current().event_type())
@@ -283,7 +283,7 @@ public:
     tstr_value_rule& operator=(const tstr_value_rule&) = default;
     tstr_value_rule& operator=(tstr_value_rule&&) = default;
 
-    virtual cddl_errc validate(const rule_dictionary&, staj_reader& reader)
+    virtual cddl_errc validate(const rule_dictionary&, staj_cursor& reader)
     {
         const staj_event& event = reader.current();
 
@@ -330,7 +330,7 @@ public:
     lookup_rule& operator=(const lookup_rule&) = default;
     lookup_rule& operator=(lookup_rule&&) = default;
 
-    virtual cddl_errc validate(const rule_dictionary& dictionary, staj_reader& reader)
+    virtual cddl_errc validate(const rule_dictionary& dictionary, staj_cursor& reader)
     {
         return rule_->validate(dictionary, reader);
     }
@@ -374,7 +374,7 @@ public:
     array_rule& operator=(const array_rule&) = default;
     array_rule& operator=(array_rule&&) = default;
 
-    virtual cddl_errc validate(const rule_dictionary& dictionary, staj_reader& reader)
+    virtual cddl_errc validate(const rule_dictionary& dictionary, staj_cursor& reader)
     {
         switch (reader.current().event_type())
         {
@@ -471,7 +471,7 @@ public:
     map_rule& operator=(const map_rule&) = default;
     map_rule& operator=(map_rule&&) = default;
 
-    virtual cddl_errc validate(const rule_dictionary& dictionary, staj_reader& reader)
+    virtual cddl_errc validate(const rule_dictionary& dictionary, staj_cursor& reader)
     {
         std::unordered_map<std::string,rule_base*> rules;
         for (auto& item : group_entries_)
@@ -563,7 +563,7 @@ public:
     group_rule& operator=(const group_rule&) = default;
     group_rule& operator=(group_rule&&) = default;
 
-    virtual cddl_errc validate(const rule_dictionary& dictionary, staj_reader& reader)
+    virtual cddl_errc validate(const rule_dictionary& dictionary, staj_cursor& reader)
     {
         for (size_t i = 0; i < group_entries_.size(); ++i)
         {

@@ -7,7 +7,7 @@
 #ifndef JSONCONS_CDDL_ACCEPTOR_HPP
 #define JSONCONS_CDDL_ACCEPTOR_HPP
 
-#include <jsoncons/staj_reader.hpp>
+#include <jsoncons/staj_cursor.hpp>
 #include <jsoncons_ext/cddl/cddl_error.hpp>
 #include <memory>
 #include <unordered_map>

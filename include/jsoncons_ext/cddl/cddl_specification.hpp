@@ -32,7 +32,7 @@ public:
     cddl_specification& operator=(const cddl_specification&) = delete;
     cddl_specification& operator=(cddl_specification&&) = default;
 
-    void validate(staj_reader& reader)
+    void validate(staj_cursor& reader)
     {
         root_->validate(dictionary_, reader);
     }
