@@ -72,46 +72,46 @@ private:
         return true;
     }
 
-    bool visit_null_value(semantic_tag, const ser_context&, std::error_code&) override
+    bool visit_null(semantic_tag, const ser_context&, std::error_code&) override
     {
         return true;
     }
 
-    bool visit_string_value(const string_view_type&, semantic_tag, const ser_context&, std::error_code&) override
+    bool visit_string(const string_view_type&, semantic_tag, const ser_context&, std::error_code&) override
     {
         //Acceptor next = acceptor_stack_.back().createChildAcceptor(key_, staj_event(s,tag));
         return true;
     }
 
-    bool visit_byte_string_value(const byte_string_view&,
+    bool visit_byte_string(const byte_string_view&,
                               semantic_tag, 
                               const ser_context&, std::error_code&) override
     {
         return true;
     }
 
-    bool visit_int64_value(int64_t, 
+    bool visit_int64(int64_t, 
                         semantic_tag, 
                         const ser_context&, std::error_code&) override
     {
         return true;
     }
 
-    bool visit_uint64_value(uint64_t, 
+    bool visit_uint64(uint64_t, 
                          semantic_tag, 
                          const ser_context&, std::error_code&) override
     {
         return true;
     }
 
-    bool visit_double_value(double, 
+    bool visit_double(double, 
                          semantic_tag,
                          const ser_context&, std::error_code&) override
     {
         return true;
     }
 
-    bool visit_bool_value(bool, semantic_tag, const ser_context&, std::error_code&) override
+    bool visit_bool(bool, semantic_tag, const ser_context&, std::error_code&) override
     {
         return true;
     }
