@@ -19,8 +19,8 @@ information about user types provided by specializations of [json_type_traits](d
 
 The [jsoncons data model](doc/ref/data-model.md) supports the familiar JSON types - nulls,
 booleans, numbers, strings, arrays, objects - plus byte strings. In addition, jsoncons 
-supports semantic tagging of date-time values, timestamp values, big integers, 
-big decimals, bigfloats and binary encodings. This allows it to preserve these type semantics when parsing 
+supports semantic tagging of datetimes, epoch times, big integers, 
+big decimals, big floats and binary encodings. This allows it to preserve these type semantics when parsing 
 JSON-like data formats such as CBOR that have them.
 
 jsoncons is distributed under the [Boost Software License](http://www.boost.org/users/license.html). 
@@ -66,7 +66,7 @@ Or, download the latest code on [master](https://github.com/danielaparker/jsonco
 - [Quick guide](http://danielaparker.github.io/jsoncons)
 - [Examples](doc/Examples.md)
 - [Reference](doc/Reference.md)
-- [Roadmap](Roadmap.md)
+- [Ask questions and suggest ideas for new features](https://github.com/danielaparker/jsoncons/discussions)
 
 The library requires a C++ Compiler with C++11 support. In addition the library defines `jsoncons::endian`,
 `jsoncons::basic_string_view`, `jsoncons::optional`, and `jsoncons::span`, which will be typedefed to
@@ -120,7 +120,7 @@ std::string data = R"(
            "assertion": "advanced",
            "rated": "Marilyn C",
            "rating": 0.90,
-           "confidence": 0.99
+           "generated": 1514862245
          }
        ]
     }
@@ -185,7 +185,7 @@ Marilyn C, 0.9
     "reputons": [
         {
             "assertion": "advanced",
-            "confidence": 0.99,
+            "generated": 1514862245,
             "rated": "Marilyn C",
             "rater": "HikingAsylum",
             "rating": 0.9
@@ -196,12 +196,12 @@ Marilyn C, 0.9
 
 #### As a strongly typed C++ data structure
 
-jsoncons supports mapping JSON data into C++ data structures. 
+jsoncons supports transforming JSON texts into C++ data structures. 
 The functions [decode_json](doc/ref/decode_json.md) and [encode_json](doc/ref/encode_json.md) 
 convert strings or streams of JSON data to C++ data structures and back. 
 Decode and encode work for all C++ classes that have 
 [json_type_traits](doc/ref/json_type_traits.md) 
-defined. The standard library containers are already supported, 
+defined. jsoncons already supports many types in the standard library, 
 and your own types will be supported too if you specialize `json_type_traits`
 in the `jsoncons` namespace. 
 
@@ -215,17 +215,17 @@ namespace ns {
         hiking_experience assertion_;
         std::string rated_;
         double rating_;
-        std::optional<double> confidence_; // assumes C++17, otherwise use jsoncons::optional
-        std::optional<uint64_t> expires_;
+        std::optional<std::chrono::seconds> generated_; // assumes C++17, if not use jsoncons::optional
+        std::optional<std::chrono::seconds> expires_;
     public:
         hiking_reputon(const std::string& rater,
                        hiking_experience assertion,
                        const std::string& rated,
                        double rating,
-                       const std::optional<double>& confidence = std::optional<double>(),
-                       const std::optional<uint64_t>& expires = std::optional<uint64_t>())
+                       const std::optional<std::chrono::seconds>& generated = std::optional<std::chrono::seconds>(),
+                       const std::optional<std::chrono::seconds>& expires = std::optional<std::chrono::seconds>())
             : rater_(rater), assertion_(assertion), rated_(rated), rating_(rating),
-              confidence_(confidence), expires_(expires)
+              generated_(generated), expires_(expires)
         {
         }
 
@@ -233,8 +233,20 @@ namespace ns {
         hiking_experience assertion() const {return assertion_;}
         const std::string& rated() const {return rated_;}
         double rating() const {return rating_;}
-        std::optional<double> confidence() const {return confidence_;}
-        std::optional<uint64_t> expires() const {return expires_;}
+        std::optional<std::chrono::seconds> generated() const {return generated_;}
+        std::optional<std::chrono::seconds> expires() const {return expires_;}
+
+        friend bool operator==(const hiking_reputon& lhs, const hiking_reputon& rhs)
+        {
+            return lhs.rater_ == rhs.rater_ && lhs.assertion_ == rhs.assertion_ && 
+                   lhs.rated_ == rhs.rated_ && lhs.rating_ == rhs.rating_ &&
+                   lhs.confidence_ == rhs.confidence_ && lhs.expires_ == rhs.expires_;
+        }
+
+        friend bool operator!=(const hiking_reputon& lhs, const hiking_reputon& rhs)
+        {
+            return !(lhs == rhs);
+        };
     };
 
     class hiking_reputation
@@ -257,9 +269,10 @@ namespace ns {
 // Declare the traits. Specify which data members need to be serialized.
 
 JSONCONS_ENUM_TRAITS(ns::hiking_experience, beginner, intermediate, advanced)
-// First four members listed are mandatory, confidence and expires are optional
+// First four members listed are mandatory, generated and expires are optional
 JSONCONS_N_CTOR_GETTER_TRAITS(ns::hiking_reputon, 4, rater, assertion, rated, rating, 
-                              confidence, expires)
+                              generated, expires)
+
 // All members are mandatory
 JSONCONS_ALL_CTOR_GETTER_TRAITS(ns::hiking_reputation, application, reputons)
 
@@ -272,12 +285,17 @@ int main()
     std::cout << "(1)\n";
     for (const auto& item : v.reputons())
     {
-        std::cout << item.rated() << ", " << item.rating() << "\n";
+        std::cout << item.rated() << ", " << item.rating();
+        if (item.generated())
+        {
+            std::cout << ", " << (*item.generated()).count();
+        }
+        std::cout << "\n";
     }
 
     // Encode the c++ structure into a string
     std::string s;
-    encode_json<ns::hiking_reputation>(v, s, indenting::indent);
+    encode_json_pretty(v, s);
     std::cout << "(2)\n";
     std::cout << s << "\n";
 }
@@ -285,14 +303,14 @@ int main()
 Output:
 ```
 (1)
-Marilyn C, 0.9
+Marilyn C, 0.9, 1514862245
 (2)
 {
     "application": "hiking",
     "reputons": [
         {
             "assertion": "advanced",
-            "confidence": 0.99,
+            "generated": 1514862245,
             "rated": "Marilyn C",
             "rater": "HikingAsylum",
             "rating": 0.9
@@ -372,7 +390,6 @@ int main()
 ```
 Output:
 ```
-Marilyn C
 begin_object
 key: application
 string_value: hiking
@@ -387,8 +404,8 @@ key: rated
 string_value: Marilyn C
 key: rating
 double_value: 0.9
-key: confidence
-double_value: 0.99
+key: generated
+uint64_value: 1514862245
 end_object
 end_array
 end_object
@@ -436,7 +453,7 @@ int main()
 ```
 Output:
 ```
-string_value: Marilyn C
+Marilyn C
 ```
 
 <div id="E2"/> 
@@ -928,8 +945,8 @@ Since v0.151.0, it is integrated with [Google OSS-fuzz](https://github.com/googl
 |                         | 4.8.5                     | x64         | CentOS 7.6        |`std::regex` isn't fully implemented in 4.8, so `jsoncons::jsonpath` regular expression filters aren't supported in 4.8 |
 |                         | 6.3.1 (Red Hat 6.3.1-1)   | x64         | Fedora release 24 |       |
 |                         | 4.9.2                     | i386        | Debian 8          |       |
-| clang                   | 3.8 and above             | x64         | Ubuntu            |       |
-| clang xcode             | 6.4 and above             | x64         | OSX               |       |
+| clang                   | 4.0, 5.0, 6.0, 7, 8                | x64         | Ubuntu            |       |
+| clang xcode             | 9.3, 9.4, 10, 10.1, 10.2, 11.2, 12 | x64         | OSX               |       |
 
 ## Building the test suite and examples with CMake
 

@@ -1501,32 +1501,45 @@ private:
             evaluate_with_default().insert(tag, first, last);
         }
 
-        template <class SAllocator=std::allocator<char_type>>
-        void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s, 
-                  indenting line_indent = indenting::no_indent) const
+        template <class Container>
+        typename std::enable_if<jsoncons::detail::is_back_insertable_char_container<Container>::value>::type
+        dump(Container& s,
+             const basic_json_encode_options<char_type>& options = basic_json_encode_options<CharT>()) const
+        {
+            evaluate().dump(s, options);
+        }
+
+        void dump(std::basic_ostream<char_type>& os, 
+                  const basic_json_encode_options<char_type>& options = basic_json_encode_options<CharT>()) const
+        {
+            evaluate().dump(os, options);
+        }
+
+        template <class Container>
+        typename std::enable_if<jsoncons::detail::is_back_insertable_char_container<Container>::value>::type
+        dump_pretty(Container& s,
+             const basic_json_encode_options<char_type>& options = basic_json_encode_options<CharT>()) const
+        {
+            evaluate().dump_pretty(s, options);
+        }
+
+        void dump_pretty(std::basic_ostream<char_type>& os, 
+                  const basic_json_encode_options<char_type>& options = basic_json_encode_options<CharT>()) const
+        {
+            evaluate().dump_pretty(os, options);
+        }
+
+        template <class Container>
+        typename std::enable_if<jsoncons::detail::is_back_insertable_char_container<Container>::value>::type
+        dump(Container& s, indenting line_indent) const
         {
             evaluate().dump(s, line_indent);
         }
 
         void dump(std::basic_ostream<char_type>& os, 
-                  indenting line_indent = indenting::no_indent) const
+                  indenting line_indent) const
         {
             evaluate().dump(os, line_indent);
-        }
-
-        template <class SAllocator=std::allocator<char_type>>
-        void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s,
-                  const basic_json_encode_options<char_type>& options, 
-                  indenting line_indent = indenting::no_indent) const
-        {
-            evaluate().dump(s, options, line_indent);
-        }
-
-        void dump(std::basic_ostream<char_type>& os, 
-                  const basic_json_encode_options<char_type>& options, 
-                  indenting line_indent = indenting::no_indent) const
-        {
-            evaluate().dump(os, options, line_indent);
         }
 
         void dump(basic_json_visitor<char_type>& visitor) const
@@ -1534,19 +1547,37 @@ private:
             evaluate().dump(visitor);
         }
 
-        template <class SAllocator=std::allocator<char_type>>
-        void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s, 
-                  indenting line_indent,
-                  std::error_code& ec) const
+        template <class Container>
+        typename std::enable_if<jsoncons::detail::is_back_insertable_char_container<Container>::value>::type
+        dump(Container& s,
+             const basic_json_encode_options<char_type>& options, 
+             indenting line_indent) const
+        {
+            evaluate().dump(s, options, line_indent);
+        }
+
+        void dump(std::basic_ostream<char_type>& os, 
+                  const basic_json_encode_options<char_type>& options, 
+                  indenting line_indent) const
+        {
+            evaluate().dump(os, options, line_indent);
+        }
+
+        template <class Container>
+        typename std::enable_if<jsoncons::detail::is_back_insertable_char_container<Container>::value>::type
+        dump(Container& s, 
+             indenting line_indent,
+             std::error_code& ec) const
         {
             evaluate().dump(s, line_indent, ec);
         }
 
-        template <class SAllocator=std::allocator<char_type>>
-        void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s,
-                  const basic_json_encode_options<char_type>& options, 
-                  indenting line_indent,
-                  std::error_code& ec) const
+        template <class Container>
+        typename std::enable_if<jsoncons::detail::is_back_insertable_char_container<Container>::value>::type
+        dump(Container& s,
+             const basic_json_encode_options<char_type>& options, 
+             indenting line_indent,
+             std::error_code& ec) const
         {
             evaluate().dump(s, options, line_indent, ec);
         }
@@ -1623,14 +1654,14 @@ private:
             return evaluate().is_datetime();
         }
 
-        JSONCONS_DEPRECATED_MSG("Instead, use tag() == semantic_tag::epoch_time")
-        bool is_epoch_time() const noexcept
+        JSONCONS_DEPRECATED_MSG("Instead, use tag() == semantic_tag::epoch_second")
+        bool is_epoch_second() const noexcept
         {
             if (!parent_.contains(key_))
             {
                 return false;
             }
-            return evaluate().is_epoch_time();
+            return evaluate().is_epoch_second();
         }
 
         template <class T>
@@ -2401,6 +2432,38 @@ public:
         return static_cast<storage_kind>(common_stor_.storage_);
     }
 
+    json_type type() const
+    {
+        switch(storage())
+        {
+            case storage_kind::null_value:
+                return json_type::null_value;
+            case storage_kind::bool_value:
+                return json_type::bool_value;
+            case storage_kind::int64_value:
+                return json_type::int64_value;
+            case storage_kind::uint64_value:
+                return json_type::uint64_value;
+            case storage_kind::half_value:
+                return json_type::half_value;
+            case storage_kind::double_value:
+                return json_type::double_value;
+            case storage_kind::short_string_value:
+            case storage_kind::long_string_value:
+                return json_type::string_value;
+            case storage_kind::byte_string_value:
+                return json_type::byte_string_value;
+            case storage_kind::array_value:
+                return json_type::array_value;
+            case storage_kind::empty_object_value:
+            case storage_kind::object_value:
+                return json_type::object_value;
+            default:
+                JSONCONS_UNREACHABLE();
+                break;
+        }
+    }
+
     semantic_tag tag() const
     {
         // It is legal to access 'common_stor_.tag_' even though 
@@ -2468,10 +2531,10 @@ public:
     {
         switch (storage())
         {
-        case storage_kind::byte_string_value:
-            return byte_string_view(cast<byte_string_storage>().data(),cast<byte_string_storage>().length());
-        default:
-            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not a byte string"));
+            case storage_kind::byte_string_value:
+                return byte_string_view(cast<byte_string_storage>().data(),cast<byte_string_storage>().length());
+            default:
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Not a byte string"));
         }
     }
 
@@ -2779,33 +2842,15 @@ public:
                 break;
         }
     }
-    // from stream
-
-    static basic_json parse(std::basic_istream<char_type>& is, 
-                            const basic_json_decode_options<char_type>& options = basic_json_decode_options<CharT>(), 
-                            std::function<bool(json_errc,const ser_context&)> err_handler = default_json_parsing())
-    {
-        json_decoder<basic_json> visitor;
-        basic_json_reader<char_type,stream_source<char_type>> reader(is, visitor, options, err_handler);
-        reader.read_next();
-        reader.check_done();
-        if (!visitor.is_valid())
-        {
-            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Failed to parse json stream"));
-        }
-        return visitor.get_result();
-    }
-
-    static basic_json parse(std::basic_istream<char_type>& is, std::function<bool(json_errc,const ser_context&)> err_handler)
-    {
-        return parse(is, basic_json_decode_options<CharT>(), err_handler);
-    }
 
     // from string
 
-    static basic_json parse(const string_view_type& s, 
-                            const basic_json_decode_options<char_type>& options = basic_json_decode_options<CharT>(), 
-                            std::function<bool(json_errc,const ser_context&)> err_handler = default_json_parsing())
+    template <class Source>
+    static
+    typename std::enable_if<jsoncons::detail::is_sequence_of<Source,char_type>::value,basic_json>::type
+    parse(const Source& s, 
+          const basic_json_decode_options<char_type>& options = basic_json_decode_options<CharT>(), 
+          std::function<bool(json_errc,const ser_context&)> err_handler = default_json_parsing())
     {
         json_decoder<basic_json> decoder;
         basic_json_parser<char_type> parser(options,err_handler);
@@ -2827,10 +2872,48 @@ public:
         return decoder.get_result();
     }
 
-    static basic_json parse(const string_view_type& s, 
-                            std::function<bool(json_errc,const ser_context&)> err_handler)
+    template <class Source>
+    static
+    typename std::enable_if<jsoncons::detail::is_sequence_of<Source,char_type>::value,basic_json>::type
+    parse(const Source& s, 
+                std::function<bool(json_errc,const ser_context&)> err_handler)
     {
         return parse(s, basic_json_decode_options<CharT>(), err_handler);
+    }
+
+    static basic_json parse(const char_type* s, 
+                            const basic_json_decode_options<char_type>& options = basic_json_decode_options<char_type>(), 
+                            std::function<bool(json_errc,const ser_context&)> err_handler = default_json_parsing())
+    {
+        return parse(basic_string_view<char_type>(s), options, err_handler);
+    }
+
+    static basic_json parse(const char_type* s, 
+                            std::function<bool(json_errc,const ser_context&)> err_handler)
+    {
+        return parse(basic_string_view<char_type>(s), basic_json_decode_options<char_type>(), err_handler);
+    }
+
+    // from stream
+
+    static basic_json parse(std::basic_istream<char_type>& is, 
+                            const basic_json_decode_options<char_type>& options = basic_json_decode_options<CharT>(), 
+                            std::function<bool(json_errc,const ser_context&)> err_handler = default_json_parsing())
+    {
+        json_decoder<basic_json> visitor;
+        basic_json_reader<char_type,stream_source<char_type>> reader(is, visitor, options, err_handler);
+        reader.read_next();
+        reader.check_done();
+        if (!visitor.is_valid())
+        {
+            JSONCONS_THROW(json_runtime_error<std::runtime_error>("Failed to parse json stream"));
+        }
+        return visitor.get_result();
+    }
+
+    static basic_json parse(std::basic_istream<char_type>& is, std::function<bool(json_errc,const ser_context&)> err_handler)
+    {
+        return parse(is, basic_json_decode_options<CharT>(), err_handler);
     }
 
     // from iterator
@@ -3190,9 +3273,60 @@ public:
         return at(name);
     }
 
-    template <class SAllocator=std::allocator<char_type>>
-    void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s, 
-              indenting line_indent = indenting::no_indent) const
+    template <class Container>
+    typename std::enable_if<jsoncons::detail::is_back_insertable_char_container<Container>::value>::type
+    dump(Container& s,
+         const basic_json_encode_options<char_type>& options = basic_json_encode_options<CharT>()) const
+    {
+        std::error_code ec;
+        dump(s, options, ec);
+        if (ec)
+        {
+            JSONCONS_THROW(ser_error(ec));
+        }
+    }
+
+    template <class Container>
+    typename std::enable_if<jsoncons::detail::is_back_insertable_char_container<Container>::value>::type
+    dump_pretty(Container& s,
+                    const basic_json_encode_options<char_type>& options = basic_json_encode_options<CharT>()) const
+    {
+        std::error_code ec;
+        dump_pretty(s, options, ec);
+        if (ec)
+        {
+            JSONCONS_THROW(ser_error(ec));
+        }
+    }
+
+    void dump(std::basic_ostream<char_type>& os, 
+              const basic_json_encode_options<char_type>& options = basic_json_encode_options<CharT>()) const
+    {
+        std::error_code ec;
+        dump(os, options, ec);
+        if (ec)
+        {
+            JSONCONS_THROW(ser_error(ec));
+        }
+    }
+
+    void dump_pretty(std::basic_ostream<char_type>& os, 
+                     const basic_json_encode_options<char_type>& options = basic_json_encode_options<CharT>()) const
+    {
+        std::error_code ec;
+        dump_pretty(os, options, ec);
+        if (ec)
+        {
+            JSONCONS_THROW(ser_error(ec));
+        }
+    }
+
+    // Legacy
+
+    template <class Container>
+    typename std::enable_if<jsoncons::detail::is_back_insertable_char_container<Container>::value>::type
+    dump(Container& s, 
+              indenting line_indent) const
     {
         std::error_code ec;
 
@@ -3203,10 +3337,11 @@ public:
         }
     }
 
-    template <class SAllocator=std::allocator<char_type>>
-    void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s,
+    template <class Container>
+    typename std::enable_if<jsoncons::detail::is_back_insertable_char_container<Container>::value>::type
+    dump(Container& s,
               const basic_json_encode_options<char_type>& options, 
-              indenting line_indent = indenting::no_indent) const
+              indenting line_indent) const
     {
         std::error_code ec;
 
@@ -3218,7 +3353,7 @@ public:
     }
 
     void dump(std::basic_ostream<char_type>& os, 
-              indenting line_indent = indenting::no_indent) const
+              indenting line_indent) const
     {
         std::error_code ec;
 
@@ -3231,7 +3366,7 @@ public:
 
     void dump(std::basic_ostream<char_type>& os, 
               const basic_json_encode_options<char_type>& options, 
-              indenting line_indent = indenting::no_indent) const
+              indenting line_indent) const
     {
         std::error_code ec;
 
@@ -3241,6 +3376,8 @@ public:
             JSONCONS_THROW(ser_error(ec));
         }
     }
+
+    // end legacy
 
     void dump(basic_json_visitor<char_type>& visitor) const
     {
@@ -3252,40 +3389,106 @@ public:
         }
     }
 
-    template <class SAllocator=std::allocator<char_type>>
-    void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s,
+    // dump
+    template <class Container>
+    typename std::enable_if<jsoncons::detail::is_back_insertable_char_container<Container>::value>::type
+    dump(Container& s,
+              const basic_json_encode_options<char_type>& options, 
+              std::error_code& ec) const
+    {
+        basic_compact_json_encoder<char_type,jsoncons::string_sink<Container>> encoder(s, options);
+        dump(encoder, ec);
+    }
+
+    template <class Container>
+    typename std::enable_if<jsoncons::detail::is_back_insertable_char_container<Container>::value>::type
+    dump(Container& s, 
+              std::error_code& ec) const
+    {
+        basic_compact_json_encoder<char_type,jsoncons::string_sink<Container>> encoder(s);
+        dump(encoder, ec);
+    }
+
+    void dump(std::basic_ostream<char_type>& os, 
+              const basic_json_encode_options<char_type>& options,
+              std::error_code& ec) const
+    {
+        basic_compact_json_encoder<char_type> encoder(os, options);
+        dump(encoder, ec);
+    }
+
+    void dump(std::basic_ostream<char_type>& os, 
+              std::error_code& ec) const
+    {
+        basic_compact_json_encoder<char_type> encoder(os);
+        dump(encoder, ec);
+    }
+
+    // dump_pretty
+
+    template <class Container>
+    typename std::enable_if<jsoncons::detail::is_back_insertable_char_container<Container>::value>::type
+    dump_pretty(Container& s,
+                     const basic_json_encode_options<char_type>& options, 
+                     std::error_code& ec) const
+    {
+        basic_json_encoder<char_type,jsoncons::string_sink<Container>> encoder(s, options);
+        dump(encoder, ec);
+    }
+
+    template <class Container>
+    typename std::enable_if<jsoncons::detail::is_back_insertable_char_container<Container>::value>::type
+    dump_pretty(Container& s, 
+                     std::error_code& ec) const
+    {
+        dump_pretty(s, basic_json_encode_options<char_type>(), ec);
+    }
+
+    void dump_pretty(std::basic_ostream<char_type>& os, 
+                     const basic_json_encode_options<char_type>& options, 
+                     std::error_code& ec) const
+    {
+        basic_json_encoder<char_type> encoder(os, options);
+        dump(encoder, ec);
+    }
+
+    void dump_pretty(std::basic_ostream<char_type>& os, 
+                     std::error_code& ec) const
+    {
+        dump_pretty(os, basic_json_encode_options<char_type>(), ec);
+    }
+
+    // legacy
+    template <class Container>
+    typename std::enable_if<jsoncons::detail::is_back_insertable_char_container<Container>::value>::type
+    dump(Container& s,
               const basic_json_encode_options<char_type>& options, 
               indenting line_indent,
               std::error_code& ec) const
     {
-        using string_type = std::basic_string<char_type,char_traits_type,SAllocator>;
         if (line_indent == indenting::indent)
         {
-            basic_json_encoder<char_type,jsoncons::string_sink<string_type>> encoder(s, options);
-            dump(encoder, ec);
+            dump_pretty(s, options, ec);
         }
         else
         {
-            basic_compact_json_encoder<char_type,jsoncons::string_sink<string_type>> encoder(s, options);
-            dump(encoder, ec);
+            dump(s, options, ec);
         }
     }
 
-    template <class SAllocator=std::allocator<char_type>>
-    void dump(std::basic_string<char_type,char_traits_type,SAllocator>& s, 
+    template <class Container>
+    typename std::enable_if<jsoncons::detail::is_back_insertable_char_container<Container>::value>::type
+    dump(Container& s, 
               indenting line_indent,
               std::error_code& ec) const
     {
-        using string_type = std::basic_string<char_type,char_traits_type,SAllocator>;
         if (line_indent == indenting::indent)
         {
-            basic_json_encoder<char_type,jsoncons::string_sink<string_type>> encoder(s);
-            dump(encoder, ec);
+            dump_pretty(s, ec);
         }
         else
         {
-            basic_compact_json_encoder<char_type,jsoncons::string_sink<string_type>> encoder(s);
-            dump(encoder, ec);
+            dump(s, ec);
         }
     }
 
@@ -3296,13 +3499,11 @@ public:
     {
         if (line_indent == indenting::indent)
         {
-            basic_json_encoder<char_type> encoder(os, options);
-            dump(encoder, ec);
+            dump_pretty(os, options, ec);
         }
         else
         {
-            basic_compact_json_encoder<char_type> encoder(os, options);
-            dump(encoder, ec);
+            dump(os, options, ec);
         }
     }
 
@@ -3312,15 +3513,14 @@ public:
     {
         if (line_indent == indenting::indent)
         {
-            basic_json_encoder<char_type> encoder(os);
-            dump(encoder, ec);
+            dump_pretty(os, ec);
         }
         else
         {
-            basic_compact_json_encoder<char_type> encoder(os);
-            dump(encoder, ec);
+            dump(os, ec);
         }
     }
+// end legacy
 
     void dump(basic_json_visitor<char_type>& visitor, 
               std::error_code& ec) const
@@ -3335,7 +3535,13 @@ public:
 
     bool is_null() const noexcept
     {
-        return storage() == storage_kind::null_value;
+        switch (storage())
+        {
+            case storage_kind::null_value:
+                return true;
+            default:
+                return false;
+        }
     }
 
     allocator_type get_allocator() const
@@ -3380,39 +3586,37 @@ public:
     {
         switch (storage())
         {
-        case storage_kind::object_value:
+            case storage_kind::object_value:
             {
                 auto it = object_value().find(key);
                 return it != object_value().end();
             }
-            break;
-        default:
-            return false;
+            default:
+                return false;
         }
     }
 
-    std::size_t count(const string_view_type& name) const
+    std::size_t count(const string_view_type& key) const
     {
         switch (storage())
         {
-        case storage_kind::object_value:
+            case storage_kind::object_value:
             {
-                auto it = object_value().find(name);
+                auto it = object_value().find(key);
                 if (it == object_value().end())
                 {
                     return 0;
                 }
                 std::size_t count = 0;
-                while (it != object_value().end()&& it->key() == name)
+                while (it != object_value().end()&& it->key() == key)
                 {
                     ++count;
                     ++it;
                 }
                 return count;
             }
-            break;
-        default:
-            return 0;
+            default:
+                return 0;
         }
     }
 
@@ -3424,7 +3628,14 @@ public:
 
     bool is_string() const noexcept
     {
-        return (storage() == storage_kind::long_string_value) || (storage() == storage_kind::short_string_value);
+        switch (storage())
+        {
+            case storage_kind::short_string_value:
+            case storage_kind::long_string_value:
+                return true;
+            default:
+                return false;
+        }
     }
 
     bool is_string_view() const noexcept
@@ -3434,7 +3645,13 @@ public:
 
     bool is_byte_string() const noexcept
     {
-        return storage() == storage_kind::byte_string_value;
+        switch (storage())
+        {
+            case storage_kind::byte_string_value:
+                return true;
+            default:
+                return false;
+        }
     }
 
     bool is_byte_string_view() const noexcept
@@ -3459,37 +3676,84 @@ public:
 
     bool is_bool() const noexcept
     {
-        return storage() == storage_kind::bool_value;
+        switch (storage())
+        {
+            case storage_kind::bool_value:
+                return true;
+            default:
+                return false;
+        }
     }
 
     bool is_object() const noexcept
     {
-        return storage() == storage_kind::object_value || storage() == storage_kind::empty_object_value;
+        switch (storage())
+        {
+            case storage_kind::empty_object_value:
+            case storage_kind::object_value:
+                return true;
+            default:
+                return false;
+        }
     }
 
     bool is_array() const noexcept
     {
-        return storage() == storage_kind::array_value;
+        switch (storage())
+        {
+            case storage_kind::array_value:
+                return true;
+            default:
+                return false;
+        }
     }
 
     bool is_int64() const noexcept
     {
-        return storage() == storage_kind::int64_value || (storage() == storage_kind::uint64_value&& (as_integer<uint64_t>() <= static_cast<uint64_t>((std::numeric_limits<int64_t>::max)())));
+        switch (storage())
+        {
+            case storage_kind::int64_value:
+                return true;
+            case storage_kind::uint64_value:
+                return as_integer<uint64_t>() <= static_cast<uint64_t>((std::numeric_limits<int64_t>::max)());
+            default:
+                return false;
+        }
     }
 
     bool is_uint64() const noexcept
     {
-        return storage() == storage_kind::uint64_value || (storage() == storage_kind::int64_value&& as_integer<int64_t>() >= 0);
+        switch (storage())
+        {
+            case storage_kind::uint64_value:
+                return true;
+            case storage_kind::int64_value:
+                return as_integer<int64_t>() >= 0;
+            default:
+                return false;
+        }
     }
 
     bool is_half() const noexcept
     {
-        return storage() == storage_kind::half_value;
+        switch (storage())
+        {
+            case storage_kind::half_value:
+                return true;
+            default:
+                return false;
+        }
     }
 
     bool is_double() const noexcept
     {
-        return storage() == storage_kind::double_value;
+        switch (storage())
+        {
+            case storage_kind::double_value:
+                return true;
+            default:
+                return false;
+        }
     }
 
     bool is_number() const noexcept
@@ -3537,12 +3801,12 @@ public:
     {
         switch (storage())
         {
-        case storage_kind::array_value:
-            return array_value().capacity();
-        case storage_kind::object_value:
-            return object_value().capacity();
-        default:
-            return 0;
+            case storage_kind::array_value:
+                return array_value().capacity();
+            case storage_kind::object_value:
+                return object_value().capacity();
+            default:
+                return 0;
         }
     }
 
@@ -3568,22 +3832,22 @@ public:
         {
             switch (storage())
             {
-            case storage_kind::array_value:
-                array_value().reserve(n);
+                case storage_kind::array_value:
+                    array_value().reserve(n);
+                    break;
+                case storage_kind::empty_object_value:
+                {
+                    create_object_implicitly();
+                    object_value().reserve(n);
+                }
                 break;
-            case storage_kind::empty_object_value:
-            {
-                create_object_implicitly();
-                object_value().reserve(n);
-            }
-            break;
-            case storage_kind::object_value:
-            {
-                object_value().reserve(n);
-            }
-                break;
-            default:
-                break;
+                case storage_kind::object_value:
+                {
+                    object_value().reserve(n);
+                }
+                    break;
+                default:
+                    break;
             }
         }
     }
@@ -3592,11 +3856,11 @@ public:
     {
         switch (storage())
         {
-        case storage_kind::array_value:
-            array_value().resize(n);
-            break;
-        default:
-            break;
+            case storage_kind::array_value:
+                array_value().resize(n);
+                break;
+            default:
+                break;
         }
     }
 
@@ -3605,11 +3869,11 @@ public:
     {
         switch (storage())
         {
-        case storage_kind::array_value:
-            array_value().resize(n, val);
-            break;
-        default:
-            break;
+            case storage_kind::array_value:
+                array_value().resize(n, val);
+                break;
+            default:
+                break;
         }
     }
 
@@ -3792,12 +4056,12 @@ public:
     {
         switch (storage())
         {
-        case storage_kind::short_string_value:
-            return cast<short_string_storage>().c_str();
-        case storage_kind::long_string_value:
-            return cast<long_string_storage>().c_str();
-        default:
-            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not a cstring"));
+            case storage_kind::short_string_value:
+                return cast<short_string_storage>().c_str();
+            case storage_kind::long_string_value:
+                return cast<long_string_storage>().c_str();
+            default:
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Not a cstring"));
         }
     }
 
@@ -3805,9 +4069,9 @@ public:
     {
         switch (storage())
         {
-        case storage_kind::empty_object_value:
-            JSONCONS_THROW(key_not_found(name.data(),name.length()));
-        case storage_kind::object_value:
+            case storage_kind::empty_object_value:
+                JSONCONS_THROW(key_not_found(name.data(),name.length()));
+            case storage_kind::object_value:
             {
                 auto it = object_value().find(name);
                 if (it == object_value().end())
@@ -3816,33 +4080,31 @@ public:
                 }
                 return it->value();
             }
-            break;
-        default:
+            default:
             {
                 JSONCONS_THROW(not_an_object(name.data(),name.length()));
             }
         }
     }
 
-    const basic_json& at(const string_view_type& name) const
+    const basic_json& at(const string_view_type& key) const
     {
         switch (storage())
         {
-        case storage_kind::empty_object_value:
-            JSONCONS_THROW(key_not_found(name.data(),name.length()));
-        case storage_kind::object_value:
+            case storage_kind::empty_object_value:
+                JSONCONS_THROW(key_not_found(key.data(),key.length()));
+            case storage_kind::object_value:
             {
-                auto it = object_value().find(name);
+                auto it = object_value().find(key);
                 if (it == object_value().end())
                 {
-                    JSONCONS_THROW(key_not_found(name.data(),name.length()));
+                    JSONCONS_THROW(key_not_found(key.data(),key.length()));
                 }
                 return it->value();
             }
-            break;
-        default:
+            default:
             {
-                JSONCONS_THROW(not_an_object(name.data(),name.length()));
+                JSONCONS_THROW(not_an_object(key.data(),key.length()));
             }
         }
     }
@@ -3851,16 +4113,16 @@ public:
     {
         switch (storage())
         {
-        case storage_kind::array_value:
-            if (i >= array_value().size())
-            {
-                JSONCONS_THROW(json_runtime_error<std::out_of_range>("Invalid array subscript"));
-            }
-            return array_value().operator[](i);
-        case storage_kind::object_value:
-            return object_value().at(i);
-        default:
-            JSONCONS_THROW(json_runtime_error<std::domain_error>("Index on non-array value not supported"));
+            case storage_kind::array_value:
+                if (i >= array_value().size())
+                {
+                    JSONCONS_THROW(json_runtime_error<std::out_of_range>("Invalid array subscript"));
+                }
+                return array_value().operator[](i);
+            case storage_kind::object_value:
+                return object_value().at(i);
+            default:
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Index on non-array value not supported"));
         }
     }
 
@@ -3868,16 +4130,16 @@ public:
     {
         switch (storage())
         {
-        case storage_kind::array_value:
-            if (i >= array_value().size())
-            {
-                JSONCONS_THROW(json_runtime_error<std::out_of_range>("Invalid array subscript"));
-            }
-            return array_value().operator[](i);
-        case storage_kind::object_value:
-            return object_value().at(i);
-        default:
-            JSONCONS_THROW(json_runtime_error<std::domain_error>("Index on non-array value not supported"));
+            case storage_kind::array_value:
+                if (i >= array_value().size())
+                {
+                    JSONCONS_THROW(json_runtime_error<std::out_of_range>("Invalid array subscript"));
+                }
+                return array_value().operator[](i);
+            case storage_kind::object_value:
+                return object_value().at(i);
+            default:
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Index on non-array value not supported"));
         }
     }
 
@@ -3885,44 +4147,44 @@ public:
     {
         switch (storage())
         {
-        case storage_kind::empty_object_value:
-            return object_range().end();
-        case storage_kind::object_value:
-            return object_iterator(object_value().find(name));
-        default:
+            case storage_kind::empty_object_value:
+                return object_range().end();
+            case storage_kind::object_value:
+                return object_iterator(object_value().find(name));
+            default:
             {
                 JSONCONS_THROW(not_an_object(name.data(),name.length()));
             }
         }
     }
 
-    const_object_iterator find(const string_view_type& name) const
+    const_object_iterator find(const string_view_type& key) const
     {
         switch (storage())
         {
-        case storage_kind::empty_object_value:
-            return object_range().end();
-        case storage_kind::object_value:
-            return const_object_iterator(object_value().find(name));
-        default:
+            case storage_kind::empty_object_value:
+                return object_range().end();
+            case storage_kind::object_value:
+                return const_object_iterator(object_value().find(key));
+            default:
             {
-                JSONCONS_THROW(not_an_object(name.data(),name.length()));
+                JSONCONS_THROW(not_an_object(key.data(),key.length()));
             }
         }
     }
 
-    const basic_json& at_or_null(const string_view_type& name) const
+    const basic_json& at_or_null(const string_view_type& key) const
     {
         switch (storage())
         {
-        case storage_kind::null_value:
-        case storage_kind::empty_object_value:
+            case storage_kind::null_value:
+            case storage_kind::empty_object_value:
             {
                 return null();
             }
-        case storage_kind::object_value:
+            case storage_kind::object_value:
             {
-                auto it = object_value().find(name);
+                auto it = object_value().find(key);
                 if (it != object_value().end())
                 {
                     return it->value();
@@ -3932,15 +4194,15 @@ public:
                     return null();
                 }
             }
-        default:
+            default:
             {
-                JSONCONS_THROW(not_an_object(name.data(),name.length()));
+                JSONCONS_THROW(not_an_object(key.data(),key.length()));
             }
         }
     }
 
     template <class T,class U>
-    T get_value_or(const string_view_type& name, U&& default_value) const
+    T get_value_or(const string_view_type& key, U&& default_value) const
     {
         static_assert(std::is_copy_constructible<T>::value,
                       "get_value_or: T must be copy constructible");
@@ -3948,14 +4210,14 @@ public:
                       "get_value_or: U must be convertible to T");
         switch (storage())
         {
-        case storage_kind::null_value:
-        case storage_kind::empty_object_value:
+            case storage_kind::null_value:
+            case storage_kind::empty_object_value:
             {
                 return static_cast<T>(std::forward<U>(default_value));
             }
-        case storage_kind::object_value:
+            case storage_kind::object_value:
             {
-                auto it = object_value().find(name);
+                auto it = object_value().find(key);
                 if (it != object_value().end())
                 {
                     return it->value().template as<T>();
@@ -3965,9 +4227,9 @@ public:
                     return static_cast<T>(std::forward<U>(default_value));
                 }
             }
-        default:
+            default:
             {
-                JSONCONS_THROW(not_an_object(name.data(),name.length()));
+                JSONCONS_THROW(not_an_object(key.data(),key.length()));
             }
         }
     }
@@ -4382,38 +4644,6 @@ public:
         }
     }
 
-    json_type type() const
-    {
-        switch(storage())
-        {
-            case storage_kind::null_value:
-                return json_type::null_value;
-            case storage_kind::bool_value:
-                return json_type::bool_value;
-            case storage_kind::int64_value:
-                return json_type::int64_value;
-            case storage_kind::uint64_value:
-                return json_type::uint64_value;
-            case storage_kind::half_value:
-                return json_type::half_value;
-            case storage_kind::double_value:
-                return json_type::double_value;
-            case storage_kind::short_string_value:
-            case storage_kind::long_string_value:
-                return json_type::string_value;
-            case storage_kind::byte_string_value:
-                return json_type::byte_string_value;
-            case storage_kind::array_value:
-                return json_type::array_value;
-            case storage_kind::empty_object_value:
-            case storage_kind::object_value:
-                return json_type::object_value;
-            default:
-                JSONCONS_UNREACHABLE();
-                break;
-        }
-    }
-
     friend void swap(basic_json& a, basic_json& b) noexcept
     {
         a.swap(b);
@@ -4435,18 +4665,18 @@ public:
     }
 
     template<class T>
-    T get_with_default(const string_view_type& name, const T& default_value) const
+    T get_with_default(const string_view_type& key, const T& default_value) const
     {
         switch (storage())
         {
-        case storage_kind::null_value:
-        case storage_kind::empty_object_value:
+            case storage_kind::null_value:
+            case storage_kind::empty_object_value:
             {
                 return default_value;
             }
-        case storage_kind::object_value:
+            case storage_kind::object_value:
             {
-                auto it = object_value().find(name);
+                auto it = object_value().find(key);
                 if (it != object_value().end())
                 {
                     return it->value().template as<T>();
@@ -4456,26 +4686,26 @@ public:
                     return default_value;
                 }
             }
-        default:
+            default:
             {
-                JSONCONS_THROW(not_an_object(name.data(),name.length()));
+                JSONCONS_THROW(not_an_object(key.data(),key.length()));
             }
         }
     }
 
     template<class T = std::basic_string<char_type>>
-    T get_with_default(const string_view_type& name, const char_type* default_value) const
+    T get_with_default(const string_view_type& key, const char_type* default_value) const
     {
         switch (storage())
         {
-        case storage_kind::null_value:
-        case storage_kind::empty_object_value:
+            case storage_kind::null_value:
+            case storage_kind::empty_object_value:
             {
                 return T(default_value);
             }
-        case storage_kind::object_value:
+            case storage_kind::object_value:
             {
-                auto it = object_value().find(name);
+                auto it = object_value().find(key);
                 if (it != object_value().end())
                 {
                     return it->value().template as<T>();
@@ -4485,9 +4715,9 @@ public:
                     return T(default_value);
                 }
             }
-        default:
+            default:
             {
-                JSONCONS_THROW(not_an_object(name.data(),name.length()));
+                JSONCONS_THROW(not_an_object(key.data(),key.length()));
             }
         }
     }
@@ -4741,10 +4971,10 @@ public:
         return tag() == semantic_tag::datetime;
     }
 
-    JSONCONS_DEPRECATED_MSG("Instead, use tag() == semantic_tag::epoch_time")
-    bool is_epoch_time() const noexcept
+    JSONCONS_DEPRECATED_MSG("Instead, use tag() == semantic_tag::epoch_second")
+    bool is_epoch_second() const noexcept
     {
-        return tag() == semantic_tag::epoch_time;
+        return tag() == semantic_tag::epoch_second;
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use contains(const string_view_type&)")
@@ -4756,19 +4986,19 @@ public:
     JSONCONS_DEPRECATED_MSG("Instead, use is_int64()")
     bool is_integer() const noexcept
     {
-        return storage() == storage_kind::int64_value || (storage() == storage_kind::uint64_value&& (as_integer<uint64_t>() <= static_cast<uint64_t>((std::numeric_limits<int64_t>::max)())));
+        return is_int64();
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use is_uint64()")
     bool is_uinteger() const noexcept
     {
-        return storage() == storage_kind::uint64_value || (storage() == storage_kind::int64_value&& as_integer<int64_t>() >= 0);
+        return is_uint64();
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use as<uint64_t>()")
     uint64_t as_uinteger() const
     {
-        return as_integer<uint64_t>();
+        return as<uint64_t>();
     }
 
     JSONCONS_DEPRECATED_MSG("No replacement")
@@ -4937,113 +5167,55 @@ public:
     JSONCONS_DEPRECATED_MSG("Instead, use is<long long>()")
     bool is_longlong() const noexcept
     {
-        return storage() == storage_kind::int64_value;
+        return is<long long>();
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use is<unsigned long long>()")
     bool is_ulonglong() const noexcept
     {
-        return storage() == storage_kind::uint64_value;
+        return is<unsigned long long>();
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use as<long long>()")
     long long as_longlong() const
     {
-        return as_integer<int64_t>();
+        return as<long long>();
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use as<unsigned long long>()")
     unsigned long long as_ulonglong() const
     {
-        return as_integer<uint64_t>();
+        return as<unsigned long long>();
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use as<int>()")
     int as_int() const
     {
-        switch (storage())
-        {
-        case storage_kind::double_value:
-            return static_cast<int>(cast<double_storage>().value());
-        case storage_kind::int64_value:
-            return static_cast<int>(cast<int64_storage>().value());
-        case storage_kind::uint64_value:
-            return static_cast<int>(cast<uint64_storage>().value());
-        case storage_kind::bool_value:
-            return cast<bool_storage>().value() ? 1 : 0;
-        default:
-            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not an int"));
-        }
+        return as<int>();
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use as<unsigned int>()")
     unsigned int as_uint() const
     {
-        switch (storage())
-        {
-        case storage_kind::double_value:
-            return static_cast<unsigned int>(cast<double_storage>().value());
-        case storage_kind::int64_value:
-            return static_cast<unsigned int>(cast<int64_storage>().value());
-        case storage_kind::uint64_value:
-            return static_cast<unsigned int>(cast<uint64_storage>().value());
-        case storage_kind::bool_value:
-            return cast<bool_storage>().value() ? 1 : 0;
-        default:
-            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not an unsigned int"));
-        }
+        return as<unsigned int>();
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use as<long>()")
     long as_long() const
     {
-        switch (storage())
-        {
-        case storage_kind::double_value:
-            return static_cast<long>(cast<double_storage>().value());
-        case storage_kind::int64_value:
-            return static_cast<long>(cast<int64_storage>().value());
-        case storage_kind::uint64_value:
-            return static_cast<long>(cast<uint64_storage>().value());
-        case storage_kind::bool_value:
-            return cast<bool_storage>().value() ? 1 : 0;
-        default:
-            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not a long"));
-        }
+        return as<long>();
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use as<unsigned long>()")
     unsigned long as_ulong() const
     {
-        switch (storage())
-        {
-        case storage_kind::double_value:
-            return static_cast<unsigned long>(cast<double_storage>().value());
-        case storage_kind::int64_value:
-            return static_cast<unsigned long>(cast<int64_storage>().value());
-        case storage_kind::uint64_value:
-            return static_cast<unsigned long>(cast<uint64_storage>().value());
-        case storage_kind::bool_value:
-            return cast<bool_storage>().value() ? 1 : 0;
-        default:
-            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not an unsigned long"));
-        }
+        return as<unsigned long>();
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use contains(const string_view_type&)")
-    bool has_member(const string_view_type& name) const noexcept
+    bool has_member(const string_view_type& key) const noexcept
     {
-        switch (storage())
-        {
-        case storage_kind::object_value:
-            {
-                auto it = object_value().find(name);
-                return it != object_value().end();
-            }
-            break;
-        default:
-            return false;
-        }
+        return contains(key);
     }
 
     JSONCONS_DEPRECATED_MSG("Instead, use erase(const_object_iterator, const_object_iterator)")
@@ -5132,13 +5304,13 @@ public:
     {
         switch (storage())
         {
-        case storage_kind::empty_object_value:
-            return range<const_object_iterator, const_object_iterator>(const_object_iterator(), const_object_iterator());
-        case storage_kind::object_value:
-            return range<const_object_iterator, const_object_iterator>(const_object_iterator(object_value().begin()),
-                                                const_object_iterator(object_value().end()));
-        default:
-            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not an object"));
+            case storage_kind::empty_object_value:
+                return range<const_object_iterator, const_object_iterator>(const_object_iterator(), const_object_iterator());
+            case storage_kind::object_value:
+                return range<const_object_iterator, const_object_iterator>(const_object_iterator(object_value().begin()),
+                                                    const_object_iterator(object_value().end()));
+            default:
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Not an object"));
         }
     }
 
@@ -5146,10 +5318,10 @@ public:
     {
         switch (storage())
         {
-        case storage_kind::array_value:
-            return range<array_iterator, const_array_iterator>(array_value().begin(),array_value().end());
-        default:
-            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not an array"));
+            case storage_kind::array_value:
+                return range<array_iterator, const_array_iterator>(array_value().begin(),array_value().end());
+            default:
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Not an array"));
         }
     }
 
@@ -5157,10 +5329,10 @@ public:
     {
         switch (storage())
         {
-        case storage_kind::array_value:
-            return range<const_array_iterator, const_array_iterator>(array_value().begin(),array_value().end());
-        default:
-            JSONCONS_THROW(json_runtime_error<std::domain_error>("Not an array"));
+            case storage_kind::array_value:
+                return range<const_array_iterator, const_array_iterator>(array_value().begin(),array_value().end());
+            default:
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Not an array"));
         }
     }
 
@@ -5180,11 +5352,11 @@ public:
     {
         switch (storage())
         {
-        case storage_kind::array_value:
-            return cast<array_storage>().value();
-        default:
-            JSONCONS_THROW(json_runtime_error<std::domain_error>("Bad array cast"));
-            break;
+            case storage_kind::array_value:
+                return cast<array_storage>().value();
+            default:
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Bad array cast"));
+                break;
         }
     }
 
@@ -5192,14 +5364,14 @@ public:
     {
         switch (storage())
         {
-        case storage_kind::empty_object_value:
-            create_object_implicitly();
-            JSONCONS_FALLTHROUGH;
-        case storage_kind::object_value:
-            return cast<object_storage>().value();
-        default:
-            JSONCONS_THROW(json_runtime_error<std::domain_error>("Bad object cast"));
-            break;
+            case storage_kind::empty_object_value:
+                create_object_implicitly();
+                JSONCONS_FALLTHROUGH;
+            case storage_kind::object_value:
+                return cast<object_storage>().value();
+            default:
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Bad object cast"));
+                break;
         }
     }
 
@@ -5207,14 +5379,14 @@ public:
     {
         switch (storage())
         {
-        case storage_kind::empty_object_value:
-            const_cast<basic_json*>(this)->create_object_implicitly(); // HERE
-            JSONCONS_FALLTHROUGH;
-        case storage_kind::object_value:
-            return cast<object_storage>().value();
-        default:
-            JSONCONS_THROW(json_runtime_error<std::domain_error>("Bad object cast"));
-            break;
+            case storage_kind::empty_object_value:
+                const_cast<basic_json*>(this)->create_object_implicitly(); // HERE
+                JSONCONS_FALLTHROUGH;
+            case storage_kind::object_value:
+                return cast<object_storage>().value();
+            default:
+                JSONCONS_THROW(json_runtime_error<std::domain_error>("Bad object cast"));
+                break;
         }
     }
 

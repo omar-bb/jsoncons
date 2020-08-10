@@ -28,6 +28,7 @@ namespace bson {
 template<class Src=jsoncons::binary_stream_source,class Allocator=std::allocator<char>>
 class basic_bson_cursor : public basic_staj_cursor<char>, private virtual ser_context
 {
+    using super_type = basic_staj_cursor<char>;
 public:
     using source_type = Src;
     using char_type = char;
@@ -99,6 +100,18 @@ public:
     bool done() const override
     {
         return parser_.done();
+    }
+
+    void array_expected(std::error_code& ec) override
+    {
+        if (cursor_visitor_.event().event_type() == staj_event_type::begin_object)
+        {
+            parser_.array_expected(cursor_visitor_, ec);
+        }
+        else
+        { 
+            super_type::array_expected(ec);
+        }
     }
 
     const staj_event& current() const override

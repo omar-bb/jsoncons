@@ -4,8 +4,8 @@
 
 // See https://github.com/danielaparker/jsoncons for latest version
 
-#ifndef JSONCONS_DESER_TRAITS_HPP
-#define JSONCONS_DESER_TRAITS_HPP
+#ifndef JSONCONS_DECODE_TRAITS_HPP
+#define JSONCONS_DECODE_TRAITS_HPP
 
 #include <string>
 #include <tuple>
@@ -21,15 +21,15 @@
 
 namespace jsoncons {
 
-    // deser_traits
+    // decode_traits
 
     template <class T, class CharT, class Enable = void>
-    struct deser_traits
+    struct decode_traits
     {
         template <class Json,class TempAllocator>
-        static T deserialize(basic_staj_cursor<CharT>& cursor, 
-                             json_decoder<Json,TempAllocator>& decoder, 
-                             std::error_code& ec)
+        static T decode(basic_staj_cursor<CharT>& cursor, 
+                        json_decoder<Json,TempAllocator>& decoder, 
+                        std::error_code& ec)
         {
             decoder.reset();
             cursor.read_to(decoder, ec);
@@ -42,14 +42,14 @@ namespace jsoncons {
     // primitive
 
     template <class T, class CharT>
-    struct deser_traits<T,CharT,
+    struct decode_traits<T,CharT,
         typename std::enable_if<detail::is_primitive<T>::value
     >::type>
     {
         template <class Json,class TempAllocator>
-        static T deserialize(basic_staj_cursor<CharT>& cursor, 
-                             json_decoder<Json,TempAllocator>&, 
-                             std::error_code& ec)
+        static T decode(basic_staj_cursor<CharT>& cursor, 
+                        json_decoder<Json,TempAllocator>&, 
+                        std::error_code& ec)
         {
             T v = cursor.current().template get<T>(ec);
             return v;
@@ -59,15 +59,15 @@ namespace jsoncons {
     // string
 
     template <class T, class CharT>
-    struct deser_traits<T,CharT,
+    struct decode_traits<T,CharT,
         typename std::enable_if<detail::is_basic_string<T>::value &&
                                 std::is_same<typename T::value_type,CharT>::value
     >::type>
     {
         template <class Json,class TempAllocator>
-        static T deserialize(basic_staj_cursor<CharT>& cursor, 
-                             json_decoder<Json,TempAllocator>&, 
-                             std::error_code& ec)
+        static T decode(basic_staj_cursor<CharT>& cursor, 
+                        json_decoder<Json,TempAllocator>&, 
+                        std::error_code& ec)
         {
             T v = cursor.current().template get<T>(ec);
             return v;
@@ -75,15 +75,15 @@ namespace jsoncons {
     };
 
     template <class T, class CharT>
-    struct deser_traits<T,CharT,
+    struct decode_traits<T,CharT,
         typename std::enable_if<detail::is_basic_string<T>::value &&
                                 !std::is_same<typename T::value_type,CharT>::value
     >::type>
     {
         template <class Json,class TempAllocator>
-        static T deserialize(basic_staj_cursor<CharT>& cursor, 
-                             json_decoder<Json,TempAllocator>&, 
-                             std::error_code& ec)
+        static T decode(basic_staj_cursor<CharT>& cursor, 
+                        json_decoder<Json,TempAllocator>&, 
+                        std::error_code& ec)
         {
             auto val = cursor.current().template get<std::basic_string<CharT>>(ec);
             T s;
@@ -98,14 +98,19 @@ namespace jsoncons {
     // std::pair
 
     template <class T1, class T2, class CharT>
-    struct deser_traits<std::pair<T1, T2>, CharT>
+    struct decode_traits<std::pair<T1, T2>, CharT>
     {
         template <class Json, class TempAllocator>
-        static std::pair<T1, T2> deserialize(basic_staj_cursor<CharT>& cursor,
-            json_decoder<Json, TempAllocator>& decoder,
-            std::error_code& ec)
+        static std::pair<T1, T2> decode(basic_staj_cursor<CharT>& cursor,
+                                        json_decoder<Json, TempAllocator>& decoder,
+                                        std::error_code& ec)
         {
             using value_type = std::pair<T1, T2>;
+            cursor.array_expected(ec);
+            if (ec)
+            {
+                return value_type{};
+            }
             if (cursor.current().event_type() != staj_event_type::begin_array)
             {
                 ec = convert_errc::not_pair;
@@ -117,11 +122,11 @@ namespace jsoncons {
                 return value_type();
             }
 
-            T1 v1 = deser_traits<T1,CharT>::deserialize(cursor, decoder, ec);
+            T1 v1 = decode_traits<T1,CharT>::decode(cursor, decoder, ec);
             if (ec) {return value_type();}
             cursor.next(ec);
             if (ec) {return value_type();}
-            T2 v2 = deser_traits<T2, CharT>::deserialize(cursor, decoder, ec);
+            T2 v2 = decode_traits<T2, CharT>::decode(cursor, decoder, ec);
             if (ec) {return value_type();}
             cursor.next(ec);
 
@@ -136,7 +141,7 @@ namespace jsoncons {
 
     // vector like
     template <class T, class CharT>
-    struct deser_traits<T,CharT,
+    struct decode_traits<T,CharT,
         typename std::enable_if<!is_json_type_traits_declared<T>::value && 
                  jsoncons::detail::is_list_like<T>::value &&
                  jsoncons::detail::is_back_insertable<T>::value &&
@@ -146,12 +151,17 @@ namespace jsoncons {
         using value_type = typename T::value_type;
 
         template <class Json,class TempAllocator>
-        static T deserialize(basic_staj_cursor<CharT>& cursor, 
-                             json_decoder<Json,TempAllocator>& decoder, 
-                             std::error_code& ec)
+        static T decode(basic_staj_cursor<CharT>& cursor, 
+                        json_decoder<Json,TempAllocator>& decoder, 
+                        std::error_code& ec)
         {
             T v;
 
+            cursor.array_expected(ec);
+            if (ec)
+            {
+                return T{};
+            }
             if (cursor.current().event_type() != staj_event_type::begin_array)
             {
                 ec = convert_errc::not_vector;
@@ -160,7 +170,7 @@ namespace jsoncons {
             cursor.next(ec);
             while (cursor.current().event_type() != staj_event_type::end_array && !ec)
             {
-                v.push_back(deser_traits<value_type,CharT>::deserialize(cursor, decoder, ec));
+                v.push_back(decode_traits<value_type,CharT>::decode(cursor, decoder, ec));
                 cursor.next(ec);
             }
             return v;
@@ -275,7 +285,7 @@ namespace jsoncons {
     };
 
     template <class T, class CharT>
-    struct deser_traits<T,CharT,
+    struct decode_traits<T,CharT,
         typename std::enable_if<!is_json_type_traits_declared<T>::value && 
                  jsoncons::detail::is_list_like<T>::value &&
                  jsoncons::detail::is_back_insertable_byte_container<T>::value &&
@@ -285,10 +295,15 @@ namespace jsoncons {
         using value_type = typename T::value_type;
 
         template <class Json,class TempAllocator>
-        static T deserialize(basic_staj_cursor<CharT>& cursor, 
-                             json_decoder<Json,TempAllocator>&, 
-                             std::error_code& ec)
+        static T decode(basic_staj_cursor<CharT>& cursor, 
+                        json_decoder<Json,TempAllocator>&, 
+                        std::error_code& ec)
         {
+            cursor.array_expected(ec);
+            if (ec)
+            {
+                return T{};
+            }
             switch (cursor.current().event_type())
             {
                 case staj_event_type::byte_string_value:
@@ -326,7 +341,7 @@ namespace jsoncons {
     };
 
     template <class T, class CharT>
-    struct deser_traits<T,CharT,
+    struct decode_traits<T,CharT,
         typename std::enable_if<!is_json_type_traits_declared<T>::value && 
                  jsoncons::detail::is_list_like<T>::value &&
                  jsoncons::detail::is_back_insertable<T>::value &&
@@ -337,10 +352,15 @@ namespace jsoncons {
         using value_type = typename T::value_type;
 
         template <class Json,class TempAllocator>
-        static T deserialize(basic_staj_cursor<CharT>& cursor, 
-                             json_decoder<Json,TempAllocator>&, 
-                             std::error_code& ec)
+        static T decode(basic_staj_cursor<CharT>& cursor, 
+                        json_decoder<Json,TempAllocator>&, 
+                        std::error_code& ec)
         {
+            cursor.array_expected(ec);
+            if (ec)
+            {
+                return T{};
+            }
             switch (cursor.current().event_type())
             {
                 case staj_event_type::begin_array:
@@ -361,7 +381,7 @@ namespace jsoncons {
 
     // set like
     template <class T, class CharT>
-    struct deser_traits<T,CharT,
+    struct decode_traits<T,CharT,
         typename std::enable_if<!is_json_type_traits_declared<T>::value && 
                  jsoncons::detail::is_list_like<T>::value &&
                  !jsoncons::detail::is_back_insertable<T>::value &&
@@ -371,12 +391,17 @@ namespace jsoncons {
         using value_type = typename T::value_type;
 
         template <class Json,class TempAllocator>
-        static T deserialize(basic_staj_cursor<CharT>& cursor, 
-                             json_decoder<Json,TempAllocator>& decoder, 
-                             std::error_code& ec)
+        static T decode(basic_staj_cursor<CharT>& cursor, 
+                        json_decoder<Json,TempAllocator>& decoder, 
+                        std::error_code& ec)
         {
             T v;
 
+            cursor.array_expected(ec);
+            if (ec)
+            {
+                return T{};
+            }
             if (cursor.current().event_type() != staj_event_type::begin_array)
             {
                 ec = convert_errc::not_vector;
@@ -385,7 +410,7 @@ namespace jsoncons {
             cursor.next(ec);
             while (cursor.current().event_type() != staj_event_type::end_array && !ec)
             {
-                v.insert(deser_traits<value_type,CharT>::deserialize(cursor, decoder, ec));
+                v.insert(decode_traits<value_type,CharT>::decode(cursor, decoder, ec));
                 cursor.next(ec);
             }
             return v;
@@ -395,25 +420,31 @@ namespace jsoncons {
     // std::array
 
     template <class T, class CharT, std::size_t N>
-    struct deser_traits<std::array<T,N>,CharT>
+    struct decode_traits<std::array<T,N>,CharT>
     {
         using value_type = typename std::array<T,N>::value_type;
 
         template <class Json,class TempAllocator>
-        static std::array<T, N> deserialize(basic_staj_cursor<CharT>& cursor, 
-                                            json_decoder<Json,TempAllocator>& decoder, 
-                                            std::error_code& ec)
+        static std::array<T, N> decode(basic_staj_cursor<CharT>& cursor, 
+                                       json_decoder<Json,TempAllocator>& decoder, 
+                                       std::error_code& ec)
         {
             std::array<T,N> v;
+            cursor.array_expected(ec);
+            if (ec)
+            {
+                return v;
+            }
             v.fill(T{});
             if (cursor.current().event_type() != staj_event_type::begin_array)
             {
                 ec = convert_errc::not_vector;
+                return v;
             }
             cursor.next(ec);
             for (std::size_t i = 0; i < N && cursor.current().event_type() != staj_event_type::end_array && !ec; ++i)
             {
-                v[i] = deser_traits<value_type,CharT>::deserialize(cursor, decoder, ec);
+                v[i] = decode_traits<value_type,CharT>::decode(cursor, decoder, ec);
                 cursor.next(ec);
             }
             return v;
@@ -423,7 +454,7 @@ namespace jsoncons {
     // map like
 
     template <class T, class CharT>
-    struct deser_traits<T,CharT,
+    struct decode_traits<T,CharT,
         typename std::enable_if<!is_json_type_traits_declared<T>::value && 
                                 jsoncons::detail::is_map_like<T>::value &&
                                 jsoncons::detail::is_constructible_from_const_pointer_and_size<typename T::key_type>::value
@@ -434,9 +465,9 @@ namespace jsoncons {
         using key_type = typename T::key_type;
 
         template <class Json,class TempAllocator>
-        static T deserialize(basic_staj_cursor<CharT>& cursor, 
-                             json_decoder<Json,TempAllocator>& decoder, 
-                             std::error_code& ec)
+        static T decode(basic_staj_cursor<CharT>& cursor, 
+                        json_decoder<Json,TempAllocator>& decoder, 
+                        std::error_code& ec)
         {
             T val;
             if (cursor.current().event_type() != staj_event_type::begin_object)
@@ -457,7 +488,7 @@ namespace jsoncons {
                 if (ec) return val;
                 cursor.next(ec);
                 if (ec) return val;
-                val.emplace(std::move(key),deser_traits<mapped_type,CharT>::deserialize(cursor, decoder, ec));
+                val.emplace(std::move(key),decode_traits<mapped_type,CharT>::decode(cursor, decoder, ec));
                 cursor.next(ec);
             }
             return val;
@@ -465,7 +496,7 @@ namespace jsoncons {
     };
 
     template <class T, class CharT>
-    struct deser_traits<T,CharT,
+    struct decode_traits<T,CharT,
         typename std::enable_if<!is_json_type_traits_declared<T>::value && 
                                 jsoncons::detail::is_map_like<T>::value &&
                                 std::is_integral<typename T::key_type>::value
@@ -476,9 +507,9 @@ namespace jsoncons {
         using key_type = typename T::key_type;
 
         template <class Json,class TempAllocator>
-        static T deserialize(basic_staj_cursor<CharT>& cursor, 
-                             json_decoder<Json,TempAllocator>& decoder, 
-                             std::error_code& ec)
+        static T decode(basic_staj_cursor<CharT>& cursor, 
+                        json_decoder<Json,TempAllocator>& decoder, 
+                        std::error_code& ec)
         {
             T val;
             if (cursor.current().event_type() != staj_event_type::begin_object)
@@ -500,7 +531,7 @@ namespace jsoncons {
                 auto key = jsoncons::detail::to_integer<key_type>(s.data(), s.size()); 
                 cursor.next(ec);
                 if (ec) return val;
-                val.emplace(key.value(),deser_traits<mapped_type,CharT>::deserialize(cursor, decoder, ec));
+                val.emplace(key.value(),decode_traits<mapped_type,CharT>::decode(cursor, decoder, ec));
                 cursor.next(ec);
             }
             return val;

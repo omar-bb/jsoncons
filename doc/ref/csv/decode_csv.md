@@ -5,8 +5,8 @@ Decodes a [comma-separated variables (CSV)](https://en.wikipedia.org/wiki/Comma-
 ```c++
 #include <jsoncons_ext/csv/csv.hpp>
 
-template <class T,class CharT>
-T decode_csv(const std::basic_string<CharT>& s, 
+template <class T,class Source>
+T decode_csv(const Source& s, 
              const basic_csv_decode_options<CharT>& options = basic_csv_decode_options<CharT>())); // (1)
 
 template <class T,class CharT>
@@ -17,9 +17,9 @@ template <class T,class InputIt>
 T decode_csv(InputIt first, InputIt last,
              const basic_csv_decode_options<CharT>& options = basic_csv_decode_options<CharT>())); // (3) (since v0.153.0)
 
-template <class T,class CharT,class TempAllocator>
+template <class T,class Source,class TempAllocator>
 T decode_csv(temp_allocator_arg_t, const TempAllocator& temp_alloc,
-             const std::basic_string<CharT>& s, 
+             const Source& s, 
              const basic_csv_decode_options<CharT>& options = basic_csv_decode_options<CharT>())); // (4)
 
 template <class T,class CharT>
@@ -28,7 +28,7 @@ T decode_csv(temp_allocator_arg_t, const TempAllocator& temp_alloc,
              const basic_csv_decode_options<CharT>& options = basic_csv_decode_options<CharT>())); // (5)
 ```
 
-(1) Reads CSV data from a string into a type T, using the specified (or defaulted) [options](basic_csv_options.md). 
+(1) Reads CSV data from a contiguous character sequence into a type T, using the specified (or defaulted) [options](basic_csv_options.md). 
 Type 'T' must be an instantiation of [basic_json](../basic_json.md) 
 or support [json_type_traits](../json_type_traits.md).
 
@@ -206,7 +206,7 @@ int main()
 
     csv::csv_options options;
     options.assume_header(true)
-          .column_types("string,float,float,float,float");
+           .column_types("string,float,float,float,float");
 
     // mapping_kind::n_objects
     options.mapping(csv::mapping_kind::n_objects);

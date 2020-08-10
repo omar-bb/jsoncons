@@ -51,6 +51,7 @@
 [Insert a new value in an array at a specific position](#C3)  
 [Merge two json objects](#C5)  
 [Construct a json byte string](#C6)  
+[Construct a multidimensional json array](#C7)  
 
 ### Access
 
@@ -75,6 +76,7 @@
 
 [Search for and repace an object member key](#F1)  
 [Search for and replace a value](#F2)  
+[Update JSON in place](#F3)  
 
 ### Parse and decode
 
@@ -418,7 +420,7 @@ std::string s;
 
 j.dump(s); // compressed
 
-j.dump(s, indenting::indent); // pretty print
+j.dump_pretty(s); // pretty print
 ```
 
 <div id="B2"/>
@@ -428,7 +430,7 @@ j.dump(s, indenting::indent); // pretty print
 ```
 j.dump(std::cout); // compressed
 
-j.dump(std::cout, indenting::indent); // pretty print
+j.dump_pretty(std::cout); // pretty print
 ```
 or
 ```
@@ -447,7 +449,7 @@ options.escape_all_non_ascii(true);
 
 j.dump(std::cout, options); // compressed
 
-j.dump(std::cout, options, indenting::indent); // pretty print
+j.dump_pretty(std::cout, options); // pretty print
 ```
 or
 ```
@@ -1055,7 +1057,7 @@ int main()
                   << item.price << "\n";
     }
     std::cout << "\n";
-    encode_json(books1, std::cout, indenting::indent);
+    encode_json_pretty(books1, std::cout);
     std::cout << "\n\n";
 
     std::cout << "(2)\n\n";
@@ -1068,7 +1070,7 @@ int main()
                   << item.get_price() << "\n";
     }
     std::cout << "\n";
-    encode_json(books2, std::cout, indenting::indent);
+    encode_json_pretty(books2, std::cout);
     std::cout << "\n\n";
 
     std::cout << "(3)\n\n";
@@ -1081,7 +1083,7 @@ int main()
                   << item.price() << "\n";
     }
     std::cout << "\n";
-    encode_json(books3, std::cout, indenting::indent);
+    encode_json_pretty(books3, std::cout);
     std::cout << "\n\n";
 
     std::cout << "(4)\n\n";
@@ -1094,7 +1096,7 @@ int main()
                   << item.get_price() << "\n";
     }
     std::cout << "\n";
-    encode_json(books4, std::cout, indenting::indent);
+    encode_json_pretty(books4, std::cout);
     std::cout << "\n\n";
 }
 ```
@@ -1268,7 +1270,7 @@ int main()
                   << item.price << "\n";
     }
     std::cout << "\n";
-    encode_json(books1, std::cout, indenting::indent);
+    encode_json_pretty(books1, std::cout);
     std::cout << "\n\n";
 
     std::cout << "(2)\n\n";
@@ -1281,7 +1283,7 @@ int main()
                   << item.price() << "\n";
     }
     std::cout << "\n";
-    encode_json(books2, std::cout, indenting::indent);
+    encode_json_pretty(books2, std::cout);
     std::cout << "\n\n";
 
     std::cout << "(3)\n\n";
@@ -1294,7 +1296,7 @@ int main()
                   << item.price() << "\n";
     }
     std::cout << "\n";
-    encode_json(books3, std::cout, indenting::indent);
+    encode_json_pretty(books3, std::cout);
     std::cout << "\n\n";
 
     std::cout << "(4)\n\n";
@@ -1307,7 +1309,7 @@ int main()
                   << item.getPrice() << "\n";
     }
     std::cout << "\n";
-    encode_json(books4, std::cout, indenting::indent);
+    encode_json_pretty(books4, std::cout);
     std::cout << "\n\n";
 }
 ```
@@ -1387,7 +1389,7 @@ int main()
         auto person = jsoncons::decode_json<ns::Person>(data);
 
         std::string s;
-        jsoncons::encode_json(person, s, indenting::indent);
+        jsoncons::encode_json_pretty(person, s);
         std::cout << s << "\n";
     }
     catch (const std::exception& e)
@@ -1423,7 +1425,7 @@ jsoncons supports conversion between JSON text and C++ data structures. The func
 and [encode_json](ref/encode_json.md) convert JSON formatted strings or streams to C++ data structures and back. 
 Decode and encode work for all C++ classes that have 
 [json_type_traits](ref/json_type_traits.md) 
-defined. The standard library containers are already supported, 
+defined. jsoncons already supports many types in the standard library, 
 and your own types will be supported too if you specialize `json_type_traits`
 in the `jsoncons` namespace. 
 
@@ -1516,7 +1518,7 @@ int main()
     }
 
     std::cout << "\n(2)\n";
-    encode_json(book_list, std::cout, indenting::indent);
+    encode_json_pretty(book_list, std::cout);
     std::cout << "\n\n";
 }
 ```
@@ -1620,8 +1622,8 @@ int main()
     std::string output1;
     std::string output2;
 
-    encode_json(val2,output2,indenting::indent);
-    encode_json(val1,output1,indenting::indent);
+    encode_json_pretty(val2,output2);
+    encode_json_pretty(val1,output1);
 
     std::cout << "(1)\n";
     std::cout << output1 << "\n\n";
@@ -1693,7 +1695,7 @@ int main()
     val.field8 = std::unique_ptr<std::string>(nullptr);
 
     std::string buf;
-    encode_json(val, buf, indenting::indent);
+    encode_json_pretty(val, buf);
 
     std::cout << buf << "\n";
 
@@ -1783,10 +1785,6 @@ generates the code from the get functions and a constructor.
 These macro declarations must be placed outside any namespace blocks.
 
 ```c++
-#include <cassert>
-#include <iostream>
-#include <jsoncons/json.hpp>
-
 namespace ns {
     enum class hiking_experience {beginner,intermediate,advanced};
 
@@ -1796,12 +1794,17 @@ namespace ns {
         hiking_experience assertion_;
         std::string rated_;
         double rating_;
+        std::optional<std::chrono::seconds> generated_; // assumes C++17, if not use jsoncons::optional
+        std::optional<std::chrono::seconds> expires_;
     public:
         hiking_reputon(const std::string& rater,
                        hiking_experience assertion,
                        const std::string& rated,
-                       double rating)
-            : rater_(rater), assertion_(assertion), rated_(rated), rating_(rating)
+                       double rating,
+                       const std::optional<std::chrono::seconds>& generated = std::optional<std::chrono::seconds>(),
+                       const std::optional<std::chrono::seconds>& expires = std::optional<std::chrono::seconds>())
+            : rater_(rater), assertion_(assertion), rated_(rated), rating_(rating),
+              generated_(generated), expires_(expires)
         {
         }
 
@@ -1809,11 +1812,14 @@ namespace ns {
         hiking_experience assertion() const {return assertion_;}
         const std::string& rated() const {return rated_;}
         double rating() const {return rating_;}
+        std::optional<std::chrono::seconds> generated() const {return generated_;}
+        std::optional<std::chrono::seconds> expires() const {return expires_;}
 
         friend bool operator==(const hiking_reputon& lhs, const hiking_reputon& rhs)
         {
             return lhs.rater_ == rhs.rater_ && lhs.assertion_ == rhs.assertion_ && 
-                   lhs.rated_ == rhs.rated_ && lhs.rating_ == rhs.rating_;
+                   lhs.rated_ == rhs.rated_ && lhs.rating_ == rhs.rating_ &&
+                   lhs.confidence_ == rhs.confidence_ && lhs.expires_ == rhs.expires_;
         }
 
         friend bool operator!=(const hiking_reputon& lhs, const hiking_reputon& rhs)
@@ -1835,47 +1841,55 @@ namespace ns {
 
         const std::string& application() const { return application_;}
         const std::vector<hiking_reputon>& reputons() const { return reputons_;}
-
-        friend bool operator==(const hiking_reputation& lhs, const hiking_reputation& rhs)
-        {
-            return (lhs.application_ == rhs.application_) && (lhs.reputons_ == rhs.reputons_);
-        }
-
-        friend bool operator!=(const hiking_reputation& lhs, const hiking_reputation& rhs)
-        {
-            return !(lhs == rhs);
-        };
     };
 
 } // namespace ns
 
 // Declare the traits. Specify which data members need to be serialized.
-JSONCONS_ENUM_TRAITS(ns::hiking_experience, beginner, intermediate, advanced)
-JSONCONS_ALL_CTOR_GETTER_TRAITS(ns::hiking_reputon, rater, assertion, rated, rating)
-JSONCONS_ALL_CTOR_GETTER_TRAITS(ns::hiking_reputation, application, reputons)
 
-using namespace jsoncons; // for convenience
+JSONCONS_ENUM_TRAITS(ns::hiking_experience, beginner, intermediate, advanced)
+// First four members listed are mandatory, generated and expires are optional
+JSONCONS_N_CTOR_GETTER_TRAITS(ns::hiking_reputon, 4, rater, assertion, rated, rating, 
+                              generated, expires)
+
+// All members are mandatory
+JSONCONS_ALL_CTOR_GETTER_TRAITS(ns::hiking_reputation, application, reputons)
 
 int main()
 {
-    ns::hiking_reputation val("hiking", { ns::hiking_reputon{"HikingAsylum",ns::hiking_experience::advanced,"Marilyn C",0.90} });
+    // Decode the string of data into a c++ structure
+    ns::hiking_reputation v = decode_json<ns::hiking_reputation>(data);
 
+    // Iterate over reputons array value
+    std::cout << "(1)\n";
+    for (const auto& item : v.reputons())
+    {
+        std::cout << item.rated() << ", " << item.rating();
+        if (item.generated())
+        {
+            std::cout << ", " << (*item.generated()).count();
+        }
+        std::cout << "\n";
+    }
+
+    // Encode the c++ structure into a string
     std::string s;
-    encode_json(val, s, indenting::indent);
+    encode_json_pretty(v, s);
+    std::cout << "(2)\n";
     std::cout << s << "\n";
-
-    auto val2 = decode_json<ns::hiking_reputation>(s);
-
-    assert(val2 == val);
 }
 ```
 Output:
 ```
+(1)
+Marilyn C, 0.9, 1514862245
+(2)
 {
     "application": "hiking",
     "reputons": [
         {
             "assertion": "advanced",
+            "generated": 1514862245,
             "rated": "Marilyn C",
             "rater": "HikingAsylum",
             "rating": 0.9
@@ -2014,7 +2028,7 @@ int main()
     }
 
     std::cout << "\n(2)\n";
-    encode_json(v, std::cout, indenting::indent);
+    encode_json_pretty(v, std::cout);
 
     std::cout << "\n\n(3)\n";
     json j(v);
@@ -2272,7 +2286,7 @@ int main()
     }
 
     std::string output;
-    jsoncons::encode_json(basket, output, jsoncons::indenting::indent);
+    jsoncons::encode_json_pretty(basket, output);
     std::cout << "(2)\n" << output << "\n\n";
 }
 ```
@@ -2341,34 +2355,14 @@ int main()
 {
     using variant_type  = std::variant<int, double, bool, std::string, ns::Color>;
 
-    variant_type var1(100);
-    variant_type var2(10.1);
-    variant_type var3(false);
-    variant_type var4(std::string("Hello World"));
-    variant_type var5(ns::Color::yellow);
+    std::vector<variant_type> vars = {100, 10.1, false, std::string("Hello World"), ns::Color::yellow};
 
-    std::string buffer1;
-    jsoncons::encode_json(var1,buffer1);
-    std::string buffer2;
-    jsoncons::encode_json(var2,buffer2);
-    std::string buffer3;
-    jsoncons::encode_json(var3,buffer3);
-    std::string buffer4;
-    jsoncons::encode_json(var4,buffer4);
-    std::string buffer5;
-    jsoncons::encode_json(var5,buffer5);
+    std::string buffer;
+    jsoncons::encode_json_pretty(vars, buffer);
 
-    std::cout << "(1) " << buffer1 << "\n";
-    std::cout << "(2) " << buffer2 << "\n";
-    std::cout << "(3) " << buffer3 << "\n";
-    std::cout << "(4) " << buffer4 << "\n";
-    std::cout << "(5) " << buffer5 << "\n";
+    std::cout << "(1)\n" << buffer << "\n\n";
 
-    auto v1 = jsoncons::decode_json<variant_type>(buffer1);
-    auto v2 = jsoncons::decode_json<variant_type>(buffer2);
-    auto v3 = jsoncons::decode_json<variant_type>(buffer3);
-    auto v4 = jsoncons::decode_json<variant_type>(buffer4);
-    auto v5 = jsoncons::decode_json<variant_type>(buffer5);
+    auto vars2 = jsoncons::decode_json<std::vector<variant_type>>(buffer);
 
     auto visitor = [](auto&& arg) {
             using T = std::decay_t<decltype(arg)>;
@@ -2384,34 +2378,33 @@ int main()
                 std::cout << "ns::Color " << arg << '\n';
         };
 
+    std::cout << "(2)\n";
+    for (const auto& item : vars2)
+    {
+        std::visit(visitor, item);
+    }
     std::cout << "\n";
-    std::cout << "(6) ";
-    std::visit(visitor, v1);
-    std::cout << "(7) ";
-    std::visit(visitor, v2);
-    std::cout << "(8) ";
-    std::visit(visitor, v3);
-    std::cout << "(9) ";
-    std::visit(visitor, v4);
-    std::cout << "(10) ";
-    std::visit(visitor, v5);
-    std::cout << "\n\n";
 }
 ```
 Output:
 ```
-(1) 100
-(2) 10.1
-(3) false
-(4) "Hello World"
-(5) "YELLOW"
+(1)
+[
+    100,
+    10.1,
+    false,
+    "Hello World",
+    "YELLOW"
+]
 
-(6) int 100
-(7) double 10.1
-(8) bool false
-(9) std::string Hello World
-(10) std::string YELLOW
+(2)
+int 100
+double 10.1
+bool false
+std::string Hello World
+std::string YELLOW
 ```
+
 Encode is fine. But when decoding, jsoncons checks if the JSON string "YELLOW" is a `std::string` 
 before it checks whether it is an `ns::Color`, and since the answer is yes, 
 it is stored in the variant as a `std::string`.
@@ -2425,18 +2418,23 @@ strings containing  the text "YELLOW", "RED", "GREEN", or "BLUE" are detected to
 
 And the output becomes
 ```
-(1) 100
-(2) 10.1
-(3) false
-(4) "Hello World"
-(5) "YELLOW"
+(1)
+[
+    100,
+    10.1,
+    false,
+    "Hello World",
+    "YELLOW"
+]
 
-(6) int 100
-(7) double 10.1
-(8) bool false
-(9) std::string Hello World
-(10) ns::Color yellow
+(2)
+int 100
+double 10.1
+bool false
+std::string Hello World
+ns::Color yellow
 ```
+
 So: types that are more constrained should appear to the left of types that are less constrained.
 
 <div id="G13"/>
@@ -2639,6 +2637,53 @@ Output:
 (2) "SGVsbG8="
 
 (3) "48656C6C6F"
+```
+<div id="C7"/>
+
+#### Construct multidimensional json arrays
+
+Construct a 3-dimensional 4 x 3 x 2 json array with all elements initialized to 0.0:
+
+```c++
+json j = json::make_array<3>(4, 3, 2, 0.0);
+double val = 1.0;
+for (size_t i = 0; i < a.size(); ++i)
+{
+    for (size_t j = 0; j < j[i].size(); ++j)
+    {
+        for (size_t k = 0; k < j[i][j].size(); ++k)
+        {
+            j[i][j][k] = val;
+            val += 1.0;
+        }
+    }
+}
+std::cout << pretty_print(j) << std::endl;
+```
+Output:
+```json
+[
+    [
+        [1.0,2.0],
+        [3.0,4.0],
+        [5.0,6.0]
+    ],
+    [
+        [7.0,8.0],
+        [9.0,10.0],
+        [11.0,12.0]
+    ],
+    [
+        [13.0,14.0],
+        [15.0,16.0],
+        [17.0,18.0]
+    ],
+    [
+        [19.0,20.0],
+        [21.0,22.0],
+        [23.0,24.0]
+    ]
+]
 ```
 
 ### Iterate
@@ -2981,6 +3026,129 @@ Output:
             }
         ]
     }
+}
+```
+
+<div id="F3"/>
+
+#### Update JSON in place
+
+Suppose you have a JSON text, and need to replace one or more strings
+found at a relative location path,  
+but are not allowed to modify anything else in the original text.
+
+```c++
+#include <jsoncons/json.hpp>
+
+using namespace jsoncons;
+
+class string_locator : public jsoncons::default_json_visitor
+{
+    char* data_;
+    std::size_t length_;
+    std::vector<std::string> path_;
+    std::string from_;
+    std::vector<std::string> current_;
+    std::vector<std::size_t> positions_;
+public:
+    using jsoncons::default_json_visitor::string_view_type;
+
+    string_locator(char* data, std::size_t length,
+                   const std::vector<std::string>& path,
+                   const std::string& from)
+        : data_(data), length_(length),
+          path_(path), from_(from)
+    {
+    }
+
+    const std::vector<std::size_t>& positions() const
+    {
+        return positions_;
+    }
+private:
+    bool visit_begin_object(semantic_tag, const ser_context&, std::error_code&) override
+    {
+        current_.emplace_back();
+        return true;
+    }
+
+    bool visit_end_object(const ser_context&, std::error_code&) override
+    {
+        current_.pop_back();
+        return true;
+    }
+
+    bool visit_key(const string_view_type& key, const ser_context&, std::error_code&) override
+    {
+        current_.back() = key;
+        return true;
+    }
+
+    bool visit_string(const string_view_type& value,
+                      jsoncons::semantic_tag,
+                      const jsoncons::ser_context& context,
+                      std::error_code&) override
+    {
+        if (path_.size() <= current_.size() && std::equal(path_.rbegin(), path_.rend(), current_.rbegin()))
+        {
+            if (value == from_)
+            {
+                positions_.push_back(context.position()+1); // one past quote character
+
+            }
+        }
+        return true;
+    }
+};
+
+void update_json_in_place(std::string& input,
+                     const std::vector<std::string>& path,
+                     const std::string& from,
+                     const std::string& to)
+{
+    string_locator locator(input.data(), input.size(), path, from);
+    jsoncons::json_reader reader(jsoncons::string_view(input), locator);
+    reader.read();
+
+    for (auto it = locator.positions().rbegin(); it != locator.positions().rend(); ++it)
+    {
+        input.replace(*it, from.size(), to);
+    }
+}
+
+int main()
+{
+    std::string input = R"(
+{
+    "Cola" : {"Type":"Drink", "Price": 10.99},"Water" : {"Type":"Drink"}, "Extra" : {"Cola" : {"Type":"Drink", "Price": 8.99}}
+}
+    )";
+
+    try
+    {
+        std::cout << "(original)\n" << input << "\n";
+        update_json_in_place(input, {"Cola", "Type"}, "Drink", "SoftDrink");
+
+        std::cout << "(updated)\n" << input << "\n";
+    }
+    catch (std::exception& e)
+    {
+        std::cout << e.what() << "\n";
+    }
+}
+```
+Output:
+```json
+(original)
+
+{
+    "Cola" : {"Type":"Drink", "Price": 10.99},"Water" : {"Type":"Drink"}, "Extra" : {"Cola" : {"Type":"Drink", "Price": 8.99}}
+}
+
+(updated)
+
+{
+    "Cola" : {"Type":"SoftDrink", "Price": 10.99},"Water" : {"Type":"Drink"}, "Extra" : {"Cola" : {"Type":"SoftDrink", "Price": 8.99}}
 }
 ```
 

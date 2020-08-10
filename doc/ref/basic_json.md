@@ -231,38 +231,29 @@ Throws `std::domain_error` if not an object.
 <table border="0">
   <tr>
     <td><a href="json/dump.md"</a>dump</td>
-    <td>Serializes basic_json value to a string, stream, or output handler.</td> 
+    <td>Serializes basic_json value to a string, stream, or <a href="./basic_json_visitor.md">basic_json_visitor</a>.</td> 
   </tr>
 </table>
 
 #### Non member functions
 
-<table border="0">
-  <tr>
-    <td><code>bool operator==(const basic_json& lhs, const basic_json& rhs)</code></td>
-    <td>Returns <code>true</true> if two basic_json objects compare equal, <code>false</true> otherwise.</td> 
-  </tr>
-  <tr>
-    <td><code>bool operator!=(const basic_json& lhs, const basic_json& rhs)</code></td>
-    <td>Returns <code>true</true> if two basic_json objects do not compare equal, <code>false</true> otherwise.</td> 
-  </tr>
-  <tr>
-    <td><code>bool operator<(const basic_json& lhs, const basic_json& rhs)</code></td>
-    <td>Compares the contents of lhs and rhs lexicographically.</td> 
-  </tr>
-  <tr>
-    <td><code>bool operator<=(const basic_json& lhs, const basic_json& rhs)</code></td>
-    <td>Compares the contents of lhs and rhs lexicographically.</td> 
-  </tr>
-  <tr>
-    <td><code>bool operator>(const basic_json& lhs, const basic_json& rhs)</code></td>
-    <td>Compares the contents of lhs and rhs lexicographically.</td> 
-  </tr>
-  <tr>
-    <td><code>bool operator>=(const basic_json& lhs, const basic_json& rhs)</code></td>
-    <td>Compares the contents of lhs and rhs lexicographically.</td> 
-  </tr>
-</table>
+    bool operator==(const basic_json& lhs, const basic_json& rhs)
+Returns `true` if two basic_json objects compare equal, `false` otherwise. 
+
+    bool operator!=(const basic_json& lhs, const basic_json& rhs)
+Returns `true` if two basic_json objects do not compare equal, `false` otherwise. 
+
+    bool operator<(const basic_json& lhs, const basic_json& rhs)
+Compares the contents of lhs and rhs lexicographically. 
+
+    bool operator<=(const basic_json& lhs, const basic_json& rhs)
+Compares the contents of lhs and rhs lexicographically. 
+
+    bool operator>(const basic_json& lhs, const basic_json& rhs)
+Compares the contents of lhs and rhs lexicographically. 
+
+    bool operator>=(const basic_json& lhs, const basic_json& rhs)
+Compares the contents of lhs and rhs lexicographically. 
 
     std::basic_istream<char_type>& operator>>(std::basic_istream<char_type>& is, basic_json& o)
 Reads a `basic_json` value from a stream.

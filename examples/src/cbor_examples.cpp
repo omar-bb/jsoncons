@@ -25,7 +25,7 @@ namespace {
         encoder.byte_string_value(purr);
         std::vector<uint8_t> hiss = {'h','i','s','s'};
         encoder.byte_string_value(hiss, semantic_tag::base64); // suggested conversion to base64
-        encoder.int64_value(1431027667, semantic_tag::epoch_time);
+        encoder.int64_value(1431027667, semantic_tag::epoch_second);
         encoder.end_array();
         encoder.flush();
 
@@ -55,7 +55,7 @@ namespace {
         encoder.begin_array(3); // array of length 3
         encoder.string_value("-18446744073709551617", semantic_tag::bigint);
         encoder.string_value("184467440737095516.16", semantic_tag::bigdec);
-        encoder.int64_value(1431027667, semantic_tag::epoch_time);
+        encoder.int64_value(1431027667, semantic_tag::epoch_second);
         encoder.end_array();
         encoder.flush();
 
@@ -88,7 +88,8 @@ namespace {
                "rater": "HikingAsylum",
                "assertion": "advanced",
                "rated": "Marilyn C",
-               "rating": 0.90
+               "rating": 0.90,
+               "generated": 1514862245
              }
            ]
         }
@@ -537,10 +538,52 @@ namespace {
         std::cout << "(4)\n" << byte_string_view(buffer2.data(),buffer2.size()) << "\n";
     }
     
+    void duration_example1()
+    {
+        auto duration = std::chrono::system_clock::now().time_since_epoch();
+        auto time = std::chrono::duration_cast<std::chrono::seconds>(duration);
 
-}; // namespace
+        std::vector<uint8_t> data;
+        cbor::encode_cbor(time, data);
 
-void run_cbor_examples()
+        /*
+          c1, // Tag 1 (epoch time)
+            1a, // 32 bit unsigned integer
+              5f,23,29,18 // 1596139800
+        */
+
+        std::cout << "CBOR bytes:\n" << jsoncons::byte_string_view(data) << "\n\n";
+
+        auto seconds = cbor::decode_cbor<std::chrono::seconds>(data);
+        std::cout << "Time since epoch (seconds): " << seconds.count() << "\n";
+    }
+
+    void duration_example2()
+    {
+        auto duration = std::chrono::system_clock::now().time_since_epoch();
+        auto time = std::chrono::duration_cast<std::chrono::duration<double>>(duration);
+
+        std::vector<uint8_t> data;
+        cbor::encode_cbor(time, data);
+
+        /*
+          c1, // Tag 1 (epoch time)
+            fb,  // Double
+              41,d7,c8,ca,46,1c,0f,87 // 1596139800.43845
+        */
+
+        std::cout << "CBOR bytes:\n" << jsoncons::byte_string_view(data) << "\n\n";
+
+        auto seconds = cbor::decode_cbor<std::chrono::duration<double>>(data);
+        std::cout << "Time since epoch (seconds): " << seconds.count() << "\n";
+
+        auto milliseconds = cbor::decode_cbor<std::chrono::milliseconds>(data);
+        std::cout << "Time since epoch (milliseconds): " << milliseconds.count() << "\n";
+    }
+
+} // namespace
+
+void cbor_examples()
 {
     std::cout << "\ncbor examples\n\n";
 
@@ -567,5 +610,7 @@ void run_cbor_examples()
     query_cbor();
 
     ext_type_example();
+    duration_example1();
+    duration_example2();
 }
 

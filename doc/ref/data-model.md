@@ -23,7 +23,9 @@ Tag|Description
 ---|-----------
 undefined |  
 datetime  |
-timestamp | 
+epoch_second | 
+epoch_milli | 
+epoch_nano | 
 bigint    | 
 bigdec    | 
 bigfloat  | 
@@ -45,12 +47,12 @@ CBOR data item|CBOR tag                                         | jsoncons data 
  undefined |&#160;                                              | null          | undefined        
  true or false |&#160;                                          | bool          |                  
  unsigned or negative integer |&#160;                           | int64         |                  
- unsigned or negative integer | 1 (epoch-based date/time)       | int64         | timestamp        
+ unsigned or negative integer | 1 (epoch-based date/time)       | int64         | epoch_second        
  unsigned integer |&#160;                                       | uint64        |                  
- unsigned integer | 1 (epoch-based date/time)                   | uint64        | timestamp        
+ unsigned integer | 1 (epoch-based date/time)                   | uint64        | epoch_second        
  half-precision float, float, or double |&#160;                 | half          |                  
  float or double |&#160;                                        | double        |                  
- double | 1 (epoch-based date/time)                             | double        | timestamp        
+ double | 1 (epoch-based date/time)                             | double        | epoch_second        
  string |&#160;                                                 | string        |                  
  byte string | 2 (positive bignum) or 2 (negative bignum)       | string        | bigint           
  array | 4 (decimal fraction)                                   | string        | bigdec           
@@ -84,9 +86,9 @@ int main()
     j.emplace_back("-18446744073709551617", semantic_tag::bigint);
     j.emplace_back("273.15", semantic_tag::bigdec);
     j.emplace_back("2018-10-19 12:41:07-07:00", semantic_tag::datetime);
-    j.emplace_back(1431027667, semantic_tag::epoch_time);
-    j.emplace_back(-1431027667, semantic_tag::epoch_time);
-    j.emplace_back(1431027667.5, semantic_tag::epoch_time);
+    j.emplace_back(1431027667, semantic_tag::epoch_second);
+    j.emplace_back(-1431027667, semantic_tag::epoch_second);
+    j.emplace_back(1431027667.5, semantic_tag::epoch_second);
 
     std::cout << "(1)\n" << pretty_print(j) << "\n\n";
 
@@ -157,9 +159,9 @@ void main()
     encoder.string_value("-18446744073709551617", semantic_tag::bigint);
     encoder.string_value("273.15", semantic_tag::bigdec);
     encoder.string_value("2018-10-19 12:41:07-07:00", semantic_tag::datetime) ;
-    encoder.int64_value(1431027667, semantic_tag::epoch_time);
-    encoder.int64_value(-1431027667, semantic_tag::epoch_time);
-    encoder.double_value(1431027667.5, semantic_tag::epoch_time);
+    encoder.int64_value(1431027667, semantic_tag::epoch_second);
+    encoder.int64_value(-1431027667, semantic_tag::epoch_second);
+    encoder.double_value(1431027667.5, semantic_tag::epoch_second);
     encoder.end_array();
     encoder.flush();
 

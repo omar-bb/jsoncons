@@ -205,4 +205,3 @@ TEST_CASE("json comparator equals tests")
     CHECK(var17 == var16);
 }
 
-

@@ -838,11 +838,12 @@ public:
                     {
                         more_ = visitor_->begin_array(semantic_tag::none, *this, ec);
                     }
-                    if (!options_.assume_header() && options_.mapping() == mapping_kind::n_rows && options_.column_names().size() > 0)
+                    if (options_.assume_header() && options_.mapping() == mapping_kind::n_rows && options_.column_names().size() > 0)
                     {
                         column_index_ = 0;
                         state_ = csv_parse_state::column_labels;
                         more_ = visitor_->begin_array(semantic_tag::none, *this, ec);
+                        state_ = csv_parse_state::expect_comment_or_record;
                     }
                     else
                     {
@@ -1323,10 +1324,10 @@ private:
                 {
                     trim_string_buffer(options_.trim_leading_inside_quotes(),options_.trim_trailing_inside_quotes());
                 }
-                if (options_.assume_header() && line_ == header_line_)
+                if (line_ == header_line_)
                 {
                     column_names_.push_back(buffer_);
-                    if (options_.mapping() == mapping_kind::n_rows)
+                    if (options_.assume_header() && options_.mapping() == mapping_kind::n_rows)
                     {
                         more_ = visitor_->string_value(buffer_, semantic_tag::none, *this, ec);
                     }
