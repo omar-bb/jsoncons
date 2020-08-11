@@ -84,8 +84,8 @@ namespace jsoncons { namespace cddl {
         }
 
         bool visit_byte_string(const byte_string_view&,
-                                  semantic_tag, 
-                                  const ser_context&, std::error_code&) override
+                               semantic_tag, 
+                               const ser_context&, std::error_code&) override
         {
             return true;
         }
