@@ -33,7 +33,7 @@
 #include <jsoncons/json_encoder.hpp>
 #include <jsoncons/json_decoder.hpp>
 #include <jsoncons/json_reader.hpp>
-#include <jsoncons/json_type_traits.hpp>
+#include <jsoncons/json_traits.hpp>
 #include <jsoncons/byte_string.hpp>
 #include <jsoncons/json_error.hpp>
 #include <jsoncons/detail/string_wrapper.hpp>
@@ -3125,14 +3125,14 @@ public:
     template <class T,
               class = typename std::enable_if<!is_proxy<T>::value && !is_basic_json<T>::value>::type>
     basic_json(const T& val)
-        : basic_json(json_type_traits<basic_json,T>::to_json(val))
+        : basic_json(json_traits<T>::template to_json<basic_json>(val))
     {
     }
 
     template <class T,
               class = typename std::enable_if<!is_proxy<T>::value && !is_basic_json<T>::value>::type>
     basic_json(const T& val, const Allocator& alloc)
-        : basic_json(json_type_traits<basic_json,T>::to_json(val,alloc))
+        : basic_json(json_traits<T>::template to_json<basic_json>(val,alloc))
     {
     }
 
@@ -3288,7 +3288,7 @@ public:
     template <class T>
     basic_json& operator=(const T& val)
     {
-        *this = json_type_traits<basic_json,T>::to_json(val);
+        *this = json_traits<T>::template to_json<basic_json>(val);
         return *this;
     }
 
@@ -3686,9 +3686,9 @@ public:
     }
 
     template<class T, class... Args>
-    bool is(Args&&... args) const noexcept
+    bool is() const noexcept
     {
-        return json_type_traits<basic_json,T>::is(*this,std::forward<Args>(args)...);
+        return json_traits<T>::is(*this);
     }
 
     bool is_string() const noexcept
@@ -3972,7 +3972,7 @@ public:
     typename std::enable_if<is_json_type_traits_specialized<basic_json,T>::value,T>::type
     as() const
     {
-        T val = json_type_traits<basic_json,T>::as(*this);
+        T val = json_traits<T>::as(*this);
         return val;
     }
 
