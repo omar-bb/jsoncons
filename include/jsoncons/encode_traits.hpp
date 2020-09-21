@@ -16,7 +16,7 @@
 #include <jsoncons/json_decoder.hpp>
 #include <jsoncons/json_options.hpp>
 #include <jsoncons/json_encoder.hpp>
-#include <jsoncons/json_type_traits.hpp>
+#include <jsoncons/json_traits.hpp>
 #include <jsoncons/convert_error.hpp>
 
 namespace jsoncons {
@@ -43,7 +43,7 @@ namespace jsoncons {
                            const Json& /*proto*/, 
                            std::error_code& ec)
         {
-            auto j = json_type_traits<Json,T>::to_json(val);
+            auto j = json_traits<T>::template to_json<Json>(val);
             j.dump(encoder, ec);
         }
         template <class Json>
@@ -53,7 +53,7 @@ namespace jsoncons {
                            const Json& proto, 
                            std::error_code& ec)
         {
-            auto j = json_type_traits<Json,T>::to_json(val, proto.get_allocator());
+            auto j = json_traits<T>::template to_json<Json>(val, proto.get_allocator());
             j.dump(encoder, ec);
         }
     };
