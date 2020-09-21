@@ -16,7 +16,7 @@
 #include <string>
 #include <type_traits> // std::enable_if
 #include <utility>
-#include <jsoncons/json_type_traits.hpp>
+#include <jsoncons/json_traits.hpp>
 
 namespace jsoncons
 {
@@ -156,7 +156,13 @@ namespace jsoncons
 
 #define JSONCONS_TYPE_TRAITS_FRIEND \
     template <class JSON,class T,class Enable> \
-    friend struct jsoncons::json_type_traits;
+    friend struct jsoncons::json_type_traits; \
+    template <class T,class Enable> \
+    friend struct jsoncons::json_traits;
+
+#define JSONCONS_TRAITS_FRIEND \
+    template <class T,class Enable> \
+    friend struct jsoncons::json_traits;
 
 #define JSONCONS_EXPAND_CALL2(Call, Expr, Id) JSONCONS_EXPAND(Call(Expr, Id))
 
@@ -220,6 +226,8 @@ namespace jsoncons
 #define JSONCONS_GENERATE_TPL_PARAM_LAST(Expr, Id) typename T ## Id
 #define JSONCONS_GENERATE_MORE_TPL_PARAM(Expr, Id) , typename T ## Id
 #define JSONCONS_GENERATE_MORE_TPL_PARAM_LAST(Expr, Id) , typename T ## Id
+#define JSONCONS_GENERATE_MORE_TPL_PARAM2(Expr, Id) typename T ## Id ,
+#define JSONCONS_GENERATE_MORE_TPL_PARAM2_LAST(Expr, Id) typename T ## Id
 #define JSONCONS_GENERATE_TPL_ARG(Expr, Id) T ## Id,
 #define JSONCONS_GENERATE_TPL_ARG_LAST(Ex, Id) T ## Id 
 
@@ -258,31 +266,37 @@ namespace jsoncons \
     { \
         JSONCONS_VARIADIC_REP_N(JSONCONS_GENERATE_NAME_STR, ,,, __VA_ARGS__)\
     }; \
-    template<typename Json JSONCONS_GENERATE_TPL_PARAMS(JSONCONS_GENERATE_MORE_TPL_PARAM, NumTemplateParams)> \
-    struct json_type_traits<Json, ValueType JSONCONS_GENERATE_TPL_ARGS(JSONCONS_GENERATE_TPL_ARG, NumTemplateParams)> \
+    template<JSONCONS_GENERATE_TPL_PARAMS(JSONCONS_GENERATE_MORE_TPL_PARAM2, NumTemplateParams)> \
+    struct json_traits<ValueType JSONCONS_GENERATE_TPL_ARGS(JSONCONS_GENERATE_TPL_ARG, NumTemplateParams)> \
     { \
         using value_type = ValueType JSONCONS_GENERATE_TPL_ARGS(JSONCONS_GENERATE_TPL_ARG, NumTemplateParams); \
-        using allocator_type = typename Json::allocator_type; \
-        using char_type = typename Json::char_type; \
-        using string_view_type = typename Json::string_view_type; \
         constexpr static size_t num_params = JSONCONS_NARGS(__VA_ARGS__); \
         constexpr static size_t num_mandatory_params1 = NumMandatoryParams1; \
         constexpr static size_t num_mandatory_params2 = NumMandatoryParams2; \
+        template <class Json> \
         static bool is(const Json& ajson) noexcept \
         { \
+            using char_type = typename Json::char_type; \
+            using string_view_type = typename Json::string_view_type; \
             if (!ajson.is_object()) return false; \
             JSONCONS_VARIADIC_REP_N(JSONCONS_N_MEMBER_IS, ,,, __VA_ARGS__)\
             return true; \
         } \
+        template <class Json> \
         static value_type as(const Json& ajson) \
         { \
+            using char_type = typename Json::char_type; \
+            using string_view_type = typename Json::string_view_type; \
             if (!is(ajson)) JSONCONS_THROW(codec_error(convert_errc::conversion_failed, "Not a " # ValueType)); \
             value_type aval{}; \
             JSONCONS_VARIADIC_REP_N(AsT, ,,, __VA_ARGS__) \
             return aval; \
         } \
-        static Json to_json(const value_type& aval, allocator_type alloc=allocator_type()) \
+        template <class Json, class Allocator = typename Json::allocator_type> \
+        static Json to_json(const value_type& aval, const Allocator& alloc=Allocator()) \
         { \
+            using char_type = typename Json::char_type; \
+            using string_view_type = typename Json::string_view_type; \
             Json ajson(json_object_arg, semantic_tag::none, alloc); \
             JSONCONS_VARIADIC_REP_N(ToJ, ,,, __VA_ARGS__) \
             return ajson; \
@@ -290,6 +304,10 @@ namespace jsoncons \
     }; \
 } \
   /**/
+
+//using allocator_type = typename Json::allocator_type;
+//using char_type = typename Json::char_type; 
+//using string_view_type = typename Json::string_view_type; 
 
 #define JSONCONS_N_MEMBER_TRAITS(ValueType,NumMandatoryParams,...)  \
     JSONCONS_MEMBER_TRAITS_BASE(JSONCONS_N_MEMBER_AS, JSONCONS_TO_JSON,0, ValueType,NumMandatoryParams,NumMandatoryParams, __VA_ARGS__) \

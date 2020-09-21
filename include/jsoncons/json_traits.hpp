@@ -15,6 +15,12 @@ namespace jsoncons {
     struct json_traits
     {
         template <class Json>
+        static constexpr bool is_compatible()
+        {
+            return !legacy_is_json_type_traits_unspecialized<Json,T>::value;
+        }
+
+        template <class Json>
         static constexpr bool is(const Json& j) noexcept
         {
             return json_type_traits<Json,T>::is(j);

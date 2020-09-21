@@ -105,14 +105,30 @@ has_can_convert = jsoncons::detail::is_detected<traits_can_convert_t, Json, T>;
         }
     };
 
+    // legacy_is_json_type_traits_unspecialized
+    template<class Json, class T, class Enable = void>
+    struct legacy_is_json_type_traits_unspecialized : std::false_type {};
+
+    template<class Json, class T>
+    struct legacy_is_json_type_traits_unspecialized<Json,T,
+        typename std::enable_if<!std::integral_constant<bool, json_type_traits<Json, T>::is_compatible>::value>::type
+    > : std::true_type {};
+
     // is_json_type_traits_unspecialized
     template<class Json, class T, class Enable = void>
     struct is_json_type_traits_unspecialized : std::false_type {};
 
-    // is_json_type_traits_unspecialized
+    //template<class Json, class T>
+    //struct is_json_type_traits_unspecialized<Json,T,
+    //    typename std::enable_if<!std::integral_constant<bool, json_type_traits<Json, T>::is_compatible>::value>::type
+    //> : std::true_type {};
+
+    template <class T>
+    class json_traits;
+
     template<class Json, class T>
     struct is_json_type_traits_unspecialized<Json,T,
-        typename std::enable_if<!std::integral_constant<bool, json_type_traits<Json, T>::is_compatible>::value>::type
+        typename std::enable_if<!std::integral_constant<bool, json_traits<T>::template is_compatible<Json>()>::value>::type
     > : std::true_type {};
 
     // is_compatible_array_type

@@ -19,7 +19,7 @@ NAME      | Serialize with provided names (instead of C++ member names)
 Square brackets indicate optionality.
 
 ```c++
-#include <jsoncons/json_type_traits.hpp>
+#include <jsoncons/json_traits_macros.hpp>
 
 JSONCONS_N_MEMBER_TRAITS(class_name,num_mandatory,
                          member_name0,member_name1,...) (1)
