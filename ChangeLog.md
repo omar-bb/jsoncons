@@ -1,4 +1,37 @@
-v0.157.0 (master)
+v0.157.2
+--------
+
+Warnings fixed:
+
+- Fixed C20 deprecated move_iterator access with arrow operator.
+- Fixed PVS-Studio warnings
+
+OSS-Fuzz issues fixed:
+
+- Fixed OSS-Fuzz failed throw issue 25891 affecting `decode_ubjson`
+and potentially other decode functions. This means that decode 
+functions will throw a `ser_error` instead of an `assertion_error`
+in the presence of certain kinds of bad data. 
+
+v0.157.1
+--------
+
+Bugs fixed:
+
+- The macros `JSONCONS_ALL_MEMBER_NAME_TRAITS` and
+`JSONCONS_N_MEMBER_NAME_TRAITS` failed at compile time 
+when provided with exactly two optional member arguments, 
+`JSONCONS_RDWR` followed by a `Match` function object 
+(other cases were fine.) This has been fixed.
+
+Change reverted:
+
+- The name change `ser_error` to `codec_error` introduced in
+0.157.0 has been reverted back to `ser_error`. Just in case
+anybody used it, the name `codec_error` has been typedefed 
+to `ser_error`.
+
+v0.157.0 
 --------
 
 Changes:
@@ -10,10 +43,10 @@ Enhancements:
 - The `_NAME_` convenience macros now allow an optional `mode` parameter 
 (`JSONCONS_RDWR` or `JSONCONS_RDONLY`) and three function objects, 
 `match` (value matches expected), `from` (convert from type known to jsoncons) 
-and `into` (convert into type known to jsoncons).
+and `into` (convert into type known to jsoncons), [\#267](https://github.com/danielaparker/jsoncons/issues/267)
 
  v0.156.1
---------
+---------
 
 Bugs fixed:
 
@@ -23,7 +56,7 @@ Bugs fixed:
 issue with a misnamed macro (`BOOST_HAS_FLOAT128` instead of `JSONCONS_HAS_FLOAT128`) introduced in 0.156.0.
 
  v0.156.0
---------
+---------
 
 Bugs Fixed:
 

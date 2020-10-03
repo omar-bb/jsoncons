@@ -378,19 +378,6 @@ namespace ns {
     };
 
     template <class Employee>
-    std::vector<Employee> fromIdsToEmployees(const std::vector<uint64_t>& ids)
-    {
-        static std::map<uint64_t, Employee> id_employee_map = {{1, Employee("John", "Smith")},{2, Employee("Jane", "Doe")}};
-
-        std::vector<Employee> employees;
-        for (auto id : ids)
-        {
-            employees.push_back(id_employee_map.at(id));
-        }
-        return employees;
-    }
-
-    template <class Employee>
     std::vector<uint64_t> fromEmployeesToIds(const std::vector<Employee>& employees)
     {
         static std::map<Employee, uint64_t> employee_id_map = {{Employee("John", "Smith"), 1},{Employee("Jane", "Doe"), 2}};
@@ -401,6 +388,19 @@ namespace ns {
             ids.push_back(employee_id_map.at(employee));
         }
         return ids;
+    }
+
+    template <class Employee>
+    std::vector<Employee> toEmployeesFromIds(const std::vector<uint64_t>& ids)
+    {
+        static std::map<uint64_t, Employee> id_employee_map = {{1, Employee("John", "Smith")},{2, Employee("Jane", "Doe")}};
+
+        std::vector<Employee> employees;
+        for (auto id : ids)
+        {
+            employees.push_back(id_employee_map.at(id));
+        }
+        return employees;
     }
 
     class Shape_ACGN
@@ -1006,7 +1006,7 @@ JSONCONS_N_MEMBER_NAME_TRAITS(ns::Employee_NMN, 2,
 
 JSONCONS_N_MEMBER_NAME_TRAITS(ns::Company_NMN, 2,
     (name_, "company"),
-    (employeeIds_, "resources", JSONCONS_RDWR, jsoncons::always_true(), ns::fromEmployeesToIds<ns::Employee_NMN>, ns::fromIdsToEmployees<ns::Employee_NMN>),
+    (employeeIds_, "resources", JSONCONS_RDWR, jsoncons::always_true(), ns::fromEmployeesToIds<ns::Employee_NMN>, ns::toEmployeesFromIds<ns::Employee_NMN>),
     (rating_, "rating")
 )
 
@@ -1017,7 +1017,7 @@ JSONCONS_ALL_MEMBER_NAME_TRAITS(ns::Employee_AMN,
 
 JSONCONS_ALL_MEMBER_NAME_TRAITS(ns::Company_AMN,
     (name_, "company"),
-    (employeeIds_, "resources", JSONCONS_RDWR, jsoncons::always_true(), ns::fromEmployeesToIds<ns::Employee_AMN>, ns::fromIdsToEmployees<ns::Employee_AMN>)
+    (employeeIds_, "resources", JSONCONS_RDWR, jsoncons::always_true(), ns::fromEmployeesToIds<ns::Employee_AMN>, ns::toEmployeesFromIds<ns::Employee_AMN>)
 )
 
 JSONCONS_N_GETTER_SETTER_NAME_TRAITS(ns::Employee_NGSN, 2,
@@ -1027,7 +1027,7 @@ JSONCONS_N_GETTER_SETTER_NAME_TRAITS(ns::Employee_NGSN, 2,
 
 JSONCONS_N_GETTER_SETTER_NAME_TRAITS(ns::Company_NGSN, 2,
   (getName, setName, "company"),
-  (getIds, setIds, "resources", JSONCONS_RDWR, jsoncons::always_true(), ns::fromEmployeesToIds<ns::Employee_NGSN>, ns::fromIdsToEmployees<ns::Employee_NGSN>),
+  (getIds, setIds, "resources", JSONCONS_RDWR, jsoncons::always_true(), ns::fromEmployeesToIds<ns::Employee_NGSN>, ns::toEmployeesFromIds<ns::Employee_NGSN>),
   (getRating, setRating, "rating")
 )
 
@@ -1038,7 +1038,7 @@ JSONCONS_ALL_GETTER_SETTER_NAME_TRAITS(ns::Employee_AGSN,
 
 JSONCONS_ALL_GETTER_SETTER_NAME_TRAITS(ns::Company_AGSN,
     (getName, setName, "company"),
-    (getIds, setIds, "resources", JSONCONS_RDWR, jsoncons::always_true(), ns::fromEmployeesToIds<ns::Employee_AGSN>, ns::fromIdsToEmployees<ns::Employee_AGSN>)
+    (getIds, setIds, "resources", JSONCONS_RDWR, jsoncons::always_true(), ns::fromEmployeesToIds<ns::Employee_AGSN>, ns::toEmployeesFromIds<ns::Employee_AGSN>)
 )
 
 JSONCONS_N_CTOR_GETTER_NAME_TRAITS(ns::Employee_NCGN, 2,
@@ -1048,7 +1048,7 @@ JSONCONS_N_CTOR_GETTER_NAME_TRAITS(ns::Employee_NCGN, 2,
 
 JSONCONS_N_CTOR_GETTER_NAME_TRAITS(ns::Company_NCGN, 2,
   (getName, "company"),
-  (getIds, "resources", JSONCONS_RDWR, jsoncons::always_true(), ns::fromEmployeesToIds<ns::Employee_NCGN>, ns::fromIdsToEmployees<ns::Employee_NCGN>),
+  (getIds, "resources", JSONCONS_RDWR, jsoncons::always_true(), ns::fromEmployeesToIds<ns::Employee_NCGN>, ns::toEmployeesFromIds<ns::Employee_NCGN>),
   (getRating, "rating")
 )
 
@@ -1059,7 +1059,7 @@ JSONCONS_ALL_CTOR_GETTER_NAME_TRAITS(ns::Employee_ACGN,
 
 JSONCONS_ALL_CTOR_GETTER_NAME_TRAITS(ns::Company_ACGN,
     (getName, "company"),
-    (getIds, "resources", JSONCONS_RDWR, jsoncons::always_true{}, ns::fromEmployeesToIds<ns::Employee_ACGN>, ns::fromIdsToEmployees<ns::Employee_ACGN>)
+    (getIds, "resources", JSONCONS_RDWR, jsoncons::always_true{}, ns::fromEmployeesToIds<ns::Employee_ACGN>, ns::toEmployeesFromIds<ns::Employee_ACGN>)
 )
 
 JSONCONS_N_CTOR_GETTER_NAME_TRAITS(ns::Person_NCGN, 2,
@@ -1316,14 +1316,9 @@ TEST_CASE("JSONCONS_ALL_CTOR_GETTER_NAME_TRAITS polymorphic and variant tests")
     {
         auto shapes = decode_json<std::vector<std::unique_ptr<ns::Shape_ACGN>>>(input);
         REQUIRE(shapes.size() == 3);
-        for (const auto& shape : shapes)
-        {
-            std::cout << "area: " << shape->area() << "\n";
-        }
         std::string output;
 
         encode_json_pretty(shapes, output);
-        std::cout << output << "\n";
 
         auto j = decode_json<json>(input);
         REQUIRE((j.is_array() && j.size() == 3));
@@ -1348,7 +1343,7 @@ TEST_CASE("JSONCONS_ALL_CTOR_GETTER_NAME_TRAITS polymorphic and variant tests")
         auto shapes = decode_json<std::vector<shapes_t>>(input);
         REQUIRE(shapes.size() == 3);
 
-        auto visitor = [](auto&& shape) {
+        /*auto visitor = [](auto&& shape) {
             using T = std::decay_t<decltype(shape)>;
             if constexpr (std::is_same_v<T, ns::Rectangle_ACGN>)
                 std::cout << "rectangle area: " << shape.area() << '\n';
@@ -1360,11 +1355,11 @@ TEST_CASE("JSONCONS_ALL_CTOR_GETTER_NAME_TRAITS polymorphic and variant tests")
         for (const auto& shape : shapes)
         {
             std::visit(visitor, shape);
-        }
+        }*/
 
         std::string output;
         encode_json_pretty(shapes, output);
-        std::cout << output << "\n";
+        //std::cout << output << "\n";
 
     }
 #endif
@@ -1384,14 +1379,9 @@ TEST_CASE("JSONCONS_ALL_GETTER_SETTER_NAME_TRAITS polymorphic and variant tests"
     {
         auto shapes = decode_json<std::vector<std::unique_ptr<ns::Shape_AGSN>>>(input);
         REQUIRE(shapes.size() == 3);
-        for (const auto& shape : shapes)
-        {
-            std::cout << "area: " << shape->area() << "\n";
-        }
         std::string output;
 
         encode_json_pretty(shapes, output);
-        std::cout << output << "\n";
 
         auto j = decode_json<json>(input);
         REQUIRE((j.is_array() && j.size() == 3));
@@ -1416,7 +1406,7 @@ TEST_CASE("JSONCONS_ALL_GETTER_SETTER_NAME_TRAITS polymorphic and variant tests"
         auto shapes = decode_json<std::vector<shapes_t>>(input);
         REQUIRE(shapes.size() == 3);
 
-        auto visitor = [](auto&& shape) {
+        /*auto visitor = [](auto&& shape) {
             using T = std::decay_t<decltype(shape)>;
             if constexpr (std::is_same_v<T, ns::Rectangle_AGSN>)
                 std::cout << "rectangle area: " << shape.area() << '\n';
@@ -1428,11 +1418,11 @@ TEST_CASE("JSONCONS_ALL_GETTER_SETTER_NAME_TRAITS polymorphic and variant tests"
         for (const auto& shape : shapes)
         {
             std::visit(visitor, shape);
-        }
+        }*/
 
         std::string output;
         encode_json_pretty(shapes, output);
-        std::cout << output << "\n";
+        //std::cout << output << "\n";
 
     }
 #endif
@@ -1452,14 +1442,9 @@ TEST_CASE("JSONCONS_N_GETTER_SETTER_NAME_TRAITS polymorphic and variant tests")
     {
         auto shapes = decode_json<std::vector<std::unique_ptr<ns::Shape_NGSN>>>(input);
         REQUIRE(shapes.size() == 3);
-        for (const auto& shape : shapes)
-        {
-            std::cout << "area: " << shape->area() << "\n";
-        }
         std::string output;
 
         encode_json_pretty(shapes, output);
-        std::cout << output << "\n";
 
         auto j = decode_json<json>(input);
         REQUIRE((j.is_array() && j.size() == 3));
@@ -1484,7 +1469,7 @@ TEST_CASE("JSONCONS_N_GETTER_SETTER_NAME_TRAITS polymorphic and variant tests")
         auto shapes = decode_json<std::vector<shapes_t>>(input);
         REQUIRE(shapes.size() == 3);
 
-        auto visitor = [](auto&& shape) {
+        /*auto visitor = [](auto&& shape) {
             using T = std::decay_t<decltype(shape)>;
             if constexpr (std::is_same_v<T, ns::Rectangle_NGSN>)
                 std::cout << "rectangle area: " << shape.area() << '\n';
@@ -1496,11 +1481,11 @@ TEST_CASE("JSONCONS_N_GETTER_SETTER_NAME_TRAITS polymorphic and variant tests")
         for (const auto& shape : shapes)
         {
             std::visit(visitor, shape);
-        }
+        }*/
 
         std::string output;
         encode_json_pretty(shapes, output);
-        std::cout << output << "\n";
+        //std::cout << output << "\n";
 
     }
 #endif
@@ -1520,14 +1505,9 @@ TEST_CASE("JSONCONS_ALL_MEMBER_NAME_TRAITS polymorphic and variant tests")
     {
         auto shapes = decode_json<std::vector<std::unique_ptr<ns::Shape_AMN>>>(input);
         REQUIRE(shapes.size() == 3);
-        for (const auto& shape : shapes)
-        {
-            std::cout << "area: " << shape->area() << "\n";
-        }
         std::string output;
 
         encode_json_pretty(shapes, output);
-        std::cout << output << "\n";
 
         auto j = decode_json<json>(input);
         REQUIRE((j.is_array() && j.size() == 3));
@@ -1552,7 +1532,7 @@ TEST_CASE("JSONCONS_ALL_MEMBER_NAME_TRAITS polymorphic and variant tests")
         auto shapes = decode_json<std::vector<shapes_t>>(input);
         REQUIRE(shapes.size() == 3);
 
-        auto visitor = [](auto&& shape) {
+        /*auto visitor = [](auto&& shape) {
             using T = std::decay_t<decltype(shape)>;
             if constexpr (std::is_same_v<T, ns::Rectangle_AMN>)
                 std::cout << "rectangle area: " << shape.area() << '\n';
@@ -1564,11 +1544,11 @@ TEST_CASE("JSONCONS_ALL_MEMBER_NAME_TRAITS polymorphic and variant tests")
         for (const auto& shape : shapes)
         {
             std::visit(visitor, shape);
-        }
+        }*/
 
         std::string output;
         encode_json_pretty(shapes, output);
-        std::cout << output << "\n";
+        //std::cout << output << "\n";
 
     }
 #endif
@@ -1588,14 +1568,9 @@ TEST_CASE("JSONCONS_N_MEMBER_NAME_TRAITS polymorphic and variant tests")
     {
         auto shapes = decode_json<std::vector<std::unique_ptr<ns::Shape_NMN>>>(input);
         REQUIRE(shapes.size() == 3);
-        for (const auto& shape : shapes)
-        {
-            std::cout << "area: " << shape->area() << "\n";
-        }
         std::string output;
 
         encode_json_pretty(shapes, output);
-        std::cout << output << "\n";
 
         auto j = decode_json<json>(input);
         REQUIRE((j.is_array() && j.size() == 3));
@@ -1620,7 +1595,7 @@ TEST_CASE("JSONCONS_N_MEMBER_NAME_TRAITS polymorphic and variant tests")
         auto shapes = decode_json<std::vector<shapes_t>>(input);
         REQUIRE(shapes.size() == 3);
 
-        auto visitor = [](auto&& shape) {
+        /*auto visitor = [](auto&& shape) {
             using T = std::decay_t<decltype(shape)>;
             if constexpr (std::is_same_v<T, ns::Rectangle_NMN>)
                 std::cout << "rectangle area: " << shape.area() << '\n';
@@ -1632,11 +1607,11 @@ TEST_CASE("JSONCONS_N_MEMBER_NAME_TRAITS polymorphic and variant tests")
         for (const auto& shape : shapes)
         {
             std::visit(visitor, shape);
-        }
+        }*/
 
         std::string output;
         encode_json_pretty(shapes, output);
-        std::cout << output << "\n";
+        //std::cout << output << "\n";
 
     }
 #endif

@@ -302,7 +302,7 @@ try
 {
     json j = json::parse(s, strict_json_parsing());
 }
-catch (const codec_error& e)
+catch (const ser_error& e)
 {
     std::cout << "(2) " << e.what() << std::endl;
 }
@@ -326,7 +326,7 @@ try
     options.max_nesting_depth(20);
     json j = json::parse(s, options);
 }
-catch (const codec_error& e)
+catch (const ser_error& e)
 {
      std::cout << e.what() << std::endl;
 }
@@ -1417,7 +1417,7 @@ JSONCONS_ALL_MEMBER_TRAITS(ns::Person, name, surname, ssn, age)
 ```
 instead. This will cause an exception to be thrown with the message
 ```
-Key 'ssn' not found
+Key not found: 'ssn' 
 ```
 
 <div id="G1"/>

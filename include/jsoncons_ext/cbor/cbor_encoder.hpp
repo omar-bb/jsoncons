@@ -12,7 +12,7 @@
 #include <limits> // std::numeric_limits
 #include <memory>
 #include <utility> // std::move
-#include <jsoncons/json_exception.hpp> // jsoncons::codec_error
+#include <jsoncons/json_exception.hpp> // jsoncons::ser_error
 #include <jsoncons/json_visitor.hpp>
 #include <jsoncons/config/jsoncons_config.hpp>
 #include <jsoncons/sink.hpp>
@@ -341,7 +341,7 @@ private:
         auto sink = unicons::validate(sv.begin(), sv.end());
         if (sink.ec != unicons::conv_errc())
         {
-            JSONCONS_THROW(codec_error(cbor_errc::invalid_utf8_text_string));
+            JSONCONS_THROW(ser_error(cbor_errc::invalid_utf8_text_string));
         }
 
         if (options_.pack_strings() && sv.size() >= jsoncons::cbor::detail::min_length_for_stringref(next_stringref_))
@@ -511,7 +511,6 @@ private:
                     {
                         case '0':case '1':case '2':case '3':case '4':case '5':case '6':case '7':case '8': case '9':
                             s.push_back(c);
-                            state = decimal_parse_state::integer;
                             break;
                         case 'e': case 'E':
                             state = decimal_parse_state::exp1;
@@ -691,7 +690,6 @@ private:
                     {
                         case '0':case '1':case '2':case '3':case '4':case '5':case '6':case '7':case '8': case '9':case 'a':case 'b':case 'c':case 'd':case 'e':case 'f':case 'A':case 'B':case 'C':case 'D':case 'E':case 'F':
                             s.push_back(c);
-                            state = hexfloat_parse_state::integer;
                             break;
                         case 'p': case 'P':
                             state = hexfloat_parse_state::exp1;
@@ -1585,7 +1583,8 @@ private:
                 break;
         }
         bool more = visit_begin_array(2, semantic_tag::none, context, ec);
-        more = visit_begin_array(shape.size(), semantic_tag::none, context, ec);
+        if (more)
+            more = visit_begin_array(shape.size(), semantic_tag::none, context, ec);
         for (auto it = shape.begin(); more && it != shape.end(); ++it)
         {
             more = visit_uint64(*it, semantic_tag::none, context, ec);
