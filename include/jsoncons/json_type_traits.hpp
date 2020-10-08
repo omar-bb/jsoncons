@@ -128,7 +128,7 @@ has_can_convert = jsoncons::detail::is_detected<traits_can_convert_t, Json, T>;
 
     template<class Json, class T>
     struct is_json_type_traits_unspecialized<Json,T,
-        typename std::enable_if<!std::integral_constant<bool, json_traits<T>::template is_compatible<Json>()>::value>::type
+        typename std::enable_if<!std::integral_constant<bool, json_type_traits<Json,T>::is_compatible>::value>::type
     > : std::true_type {};
 
     // is_compatible_array_type
