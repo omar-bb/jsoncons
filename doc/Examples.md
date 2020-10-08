@@ -40,10 +40,10 @@
 [An example using JSONCONS_ENUM_TRAITS and JSONCONS_ALL_CTOR_GETTER_TRAITS](#G8)  
 [Serialize a polymorphic type based on the presence of members](#G9)  
 [Ensuring type selection is possible](#G10)  
-[Serialize a polymorphic type based on a type member (since 0.157.0)](#G14)  
+[Decode to a polymorphic type based on a type marker (since 0.157.0)](#G14)  
 [An example with std::variant](#G11)  
 [Type selection and std::variant](#G12)  
-[Serialize a std::variant based on a type member (since 0.157.0)](#G15)  
+[Decode to a std::variant based on a type marker (since 0.158.0)](#G15)  
 [Convert JSON numbers to/from boost multiprecision numbers](#G13)
 
 ### Construct
@@ -835,6 +835,8 @@ Output:
 }
 ```
 
+See [staj_array_iterator](ref/staj_array_iterator.md) 
+
 <div id="I5"/> 
 
 #### Iterate over strongly typed items
@@ -875,7 +877,7 @@ Haruki Murakami, Hard-Boiled Wonderland and the End of the World
 Graham Greene, The Comedians
 ```
 
-See [basic_json_cursor](ref/basic_json_cursor.md) 
+See [staj_array_iterator](ref/staj_array_iterator.md) 
 
 <div id="G0"/>
 
@@ -2162,7 +2164,7 @@ A baz
 
 <div id="G14"/>
 
-#### Serialize a polymorphic type based on a type member (since 0.157.0)
+#### Decode to a polymorphic type based on a type marker (since 0.157.0)
 
 ```c++
 namespace ns {
@@ -2338,6 +2340,10 @@ class `ns::Circle area: 3.1415927
     }
 ]
 ```
+
+This example maps a `type()` getter to a "type" data member in the JSON.
+However, we can also achieve this without using a `type()` getter at all. 
+Compare with the very similar example [decode to a std::variant based on a type marker](#G15)
 
 <div id="G11"/>
 
@@ -2621,7 +2627,13 @@ So: types that are more constrained should appear to the left of types that are 
 
 <div id="G15"/>
 
-#### Serialize a std::variant based on a type member (since 0.157.0)
+#### Decode to a std::variant based on a type marker (since 0.158.0)
+
+This example is very similar to [decode to a polymorphic type based on a type marker](#G14),
+and in fact the json traits defined for that example would do for `std::variant` as well.
+But here we add a wrinkle by omitting the `type()` function in the `Rectangle`, `Triangle` and
+`Circle` classes. More generally, we show how to augment the JSON output with name/value pairs 
+that are not present in the class definitions, and to perform type selection with them.
 
 ```c++
 #include <jsoncons/json.hpp>
@@ -2636,12 +2648,6 @@ namespace ns {
         Rectangle(double height, double width)
             : height_(height), width_(width)
         {
-        }
-
-        const std::string& type() const
-        {
-            static const std::string type_ = "rectangle"; 
-            return type_;
         }
 
         double height() const
@@ -2671,12 +2677,6 @@ namespace ns {
         {
         }
 
-        const std::string& type() const
-        {
-            static const std::string type_ = "triangle"; 
-            return type_;
-        }
-
         double height() const
         {
             return height_;
@@ -2703,12 +2703,6 @@ namespace ns {
         {
         }
 
-        const std::string& type() const
-        {
-            static const std::string type_ = "circle"; 
-            return type_;
-        }
-
         double radius() const
         {
             return radius_;
@@ -2721,22 +2715,32 @@ namespace ns {
         }
     };                 
 
+    inline constexpr auto rectangle_marker = [](double) noexcept {return "rectangle"; };
+    inline constexpr auto triangle_marker = [](double) noexcept {return "triangle";};
+    inline constexpr auto circle_marker = [](double) noexcept {return "circle";};
+
 } // namespace ns
 
 JSONCONS_ALL_CTOR_GETTER_NAME_TRAITS(ns::Rectangle,
-    (type,"type",JSONCONS_RDONLY,[](const std::string& type) noexcept{return type == "rectangle";}),
+    (height,"type",JSONCONS_RDONLY,
+     [](const std::string& type) noexcept{return type == "rectangle";},
+     ns::rectangle_marker),
     (height, "height"),
     (width, "width")
 )
 
 JSONCONS_ALL_CTOR_GETTER_NAME_TRAITS(ns::Triangle,
-    (type,"type", JSONCONS_RDONLY, [](const std::string& type) noexcept {return type == "triangle";}),
+    (height,"type", JSONCONS_RDONLY, 
+     [](const std::string& type) noexcept {return type == "triangle";},
+     ns::triangle_marker),
     (height, "height"),
     (width, "width")
 )
 
 JSONCONS_ALL_CTOR_GETTER_NAME_TRAITS(ns::Circle,
-    (type,"type", JSONCONS_RDONLY, [](const std::string& type) noexcept {return type == "circle";}),
+    (radius,"type", JSONCONS_RDONLY, 
+     [](const std::string& type) noexcept {return type == "circle";},
+     ns::circle_marker),
     (radius, "radius")
 )
 

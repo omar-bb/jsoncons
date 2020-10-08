@@ -17,7 +17,7 @@
 namespace {
 namespace ns {
  
-    class Person_NCGN 
+    class Person_NCGN   
     {
           std::string name_;
           jsoncons::optional<std::string> socialSecurityNumber_;
@@ -434,12 +434,6 @@ namespace ns {
         {
             return height_ * width_;
         }
-
-        const std::string& type() const
-        {
-            static const std::string type_ = "rectangle"; 
-            return type_;
-        }
     };
 
     class Triangle_ACGN : public Shape_ACGN
@@ -543,12 +537,6 @@ namespace ns {
         double area() const override
         {
             return height_ * width_;
-        }
-
-        const std::string& getType() const
-        {
-            static const std::string type_ = "rectangle"; 
-            return type_;
         }
     };
 
@@ -669,12 +657,6 @@ namespace ns {
         {
             return height_ * width_;
         }
-
-        const std::string& getType() const
-        {
-            static const std::string type_ = "rectangle"; 
-            return type_;
-        }
     };
 
     class Triangle_NGSN : public Shape_NGSN
@@ -763,7 +745,6 @@ namespace ns {
     class Rectangle_AMN : public Shape_AMN
     {
         JSONCONS_TYPE_TRAITS_FRIEND
-        static const std::string type_;
         double height_;
         double width_;
     public:
@@ -777,8 +758,6 @@ namespace ns {
             return height_ * width_;
         }
     };
-
-    const std::string Rectangle_AMN::type_ = "rectangle";
 
     class Triangle_AMN : public Shape_AMN
     { 
@@ -837,7 +816,6 @@ namespace ns {
     class Rectangle_NMN : public Shape_NMN
     {
         JSONCONS_TYPE_TRAITS_FRIEND
-        static const std::string type_;
         double height_;
         double width_;
     public:
@@ -851,8 +829,6 @@ namespace ns {
             return height_ * width_;
         }
     };
-
-    const std::string Rectangle_NMN::type_ = "rectangle";
 
     class Triangle_NMN : public Shape_NMN
     { 
@@ -900,12 +876,18 @@ namespace ns {
     };                 
 
     const std::string Circle_NMN::type_ = "circle";
+
+    const auto rectangle_marker = [](double) noexcept {return "rectangle"; };
+    const auto triangle_marker = [](double) noexcept {return "triangle";};
+    const auto circle_marker = [](double) noexcept {return "circle";};
           
 } // namespace
 } // ns
 
 JSONCONS_ALL_CTOR_GETTER_NAME_TRAITS(ns::Rectangle_ACGN,
-    (type,"type",JSONCONS_RDONLY,[](const std::string& type) noexcept{return type == "rectangle";}),
+    (height,"type",JSONCONS_RDONLY,
+     [](const std::string& type) noexcept{return type == "rectangle";},
+     ns::rectangle_marker),
     (height, "height", JSONCONS_RDWR),
     (width, "width")
 )
@@ -925,7 +907,9 @@ JSONCONS_POLYMORPHIC_TRAITS(ns::Shape_ACGN,ns::Rectangle_ACGN,ns::Triangle_ACGN,
 
 
 JSONCONS_ALL_GETTER_SETTER_NAME_TRAITS(ns::Rectangle_AGSN,
-    (getType, ,"type",JSONCONS_RDONLY,[](const std::string& type) noexcept{return type == "rectangle";}),
+    (getHeight, ,"type",JSONCONS_RDONLY,
+     [](const std::string& type) noexcept{return type == "rectangle";},
+     ns::rectangle_marker),
     (getHeight, setHeight, "height"),
     (getWidth, setWidth, "width")
 )
@@ -944,7 +928,9 @@ JSONCONS_ALL_GETTER_SETTER_NAME_TRAITS(ns::Circle_AGSN,
 JSONCONS_POLYMORPHIC_TRAITS(ns::Shape_AGSN,ns::Rectangle_AGSN,ns::Triangle_AGSN,ns::Circle_AGSN)
 
 JSONCONS_N_GETTER_SETTER_NAME_TRAITS(ns::Rectangle_NGSN, 3,
-    (getType, ,"type",JSONCONS_RDONLY,[](const std::string& type) noexcept{return type == "rectangle";}),
+    (getHeight, ,"type",JSONCONS_RDONLY,
+     [](const std::string& type) noexcept{return type == "rectangle";},
+     ns::rectangle_marker),
     (getHeight, setHeight, "height"),
     (getWidth, setWidth, "width")
 )
@@ -963,8 +949,10 @@ JSONCONS_N_GETTER_SETTER_NAME_TRAITS(ns::Circle_NGSN, 2,
 JSONCONS_POLYMORPHIC_TRAITS(ns::Shape_NGSN,ns::Rectangle_NGSN,ns::Triangle_NGSN,ns::Circle_NGSN)
 
 JSONCONS_ALL_MEMBER_NAME_TRAITS(ns::Rectangle_AMN,
-    (type_,"type",JSONCONS_RDONLY,[](const std::string& type) noexcept{return type == "rectangle";}),
-    (height_, "height",JSONCONS_RDWR),
+    (height_,"type",JSONCONS_RDONLY,
+        [](const std::string& type) noexcept {return type == "rectangle"; }, 
+        ns::rectangle_marker),
+    (height_, "height"),
     (width_, "width")
 )
 
@@ -982,7 +970,9 @@ JSONCONS_ALL_MEMBER_NAME_TRAITS(ns::Circle_AMN,
 JSONCONS_POLYMORPHIC_TRAITS(ns::Shape_AMN,ns::Rectangle_AMN,ns::Triangle_AMN,ns::Circle_AMN)
 
 JSONCONS_N_MEMBER_NAME_TRAITS(ns::Rectangle_NMN, 3,
-    (type_,"type",JSONCONS_RDONLY,[](const std::string& type) noexcept{return type == "rectangle";}),
+    (height_,"type",JSONCONS_RDONLY,
+     [](const std::string& type) noexcept{return type == "rectangle";},
+     ns::rectangle_marker),
     (height_, "height"),
     (width_, "width")
 ) 
@@ -1006,7 +996,8 @@ JSONCONS_N_MEMBER_NAME_TRAITS(ns::Employee_NMN, 2,
 
 JSONCONS_N_MEMBER_NAME_TRAITS(ns::Company_NMN, 2,
     (name_, "company"),
-    (employeeIds_, "resources", JSONCONS_RDWR, jsoncons::always_true(), ns::fromEmployeesToIds<ns::Employee_NMN>, ns::toEmployeesFromIds<ns::Employee_NMN>),
+    (employeeIds_, "resources", JSONCONS_RDWR, jsoncons::always_true(), 
+     ns::toEmployeesFromIds<ns::Employee_NMN>, ns::fromEmployeesToIds<ns::Employee_NMN>),
     (rating_, "rating")
 )
 
@@ -1017,7 +1008,8 @@ JSONCONS_ALL_MEMBER_NAME_TRAITS(ns::Employee_AMN,
 
 JSONCONS_ALL_MEMBER_NAME_TRAITS(ns::Company_AMN,
     (name_, "company"),
-    (employeeIds_, "resources", JSONCONS_RDWR, jsoncons::always_true(), ns::fromEmployeesToIds<ns::Employee_AMN>, ns::toEmployeesFromIds<ns::Employee_AMN>)
+    (employeeIds_, "resources", JSONCONS_RDWR, jsoncons::always_true(), 
+     ns::toEmployeesFromIds<ns::Employee_AMN>, ns::fromEmployeesToIds<ns::Employee_AMN>)
 )
 
 JSONCONS_N_GETTER_SETTER_NAME_TRAITS(ns::Employee_NGSN, 2,
@@ -1027,7 +1019,8 @@ JSONCONS_N_GETTER_SETTER_NAME_TRAITS(ns::Employee_NGSN, 2,
 
 JSONCONS_N_GETTER_SETTER_NAME_TRAITS(ns::Company_NGSN, 2,
   (getName, setName, "company"),
-  (getIds, setIds, "resources", JSONCONS_RDWR, jsoncons::always_true(), ns::fromEmployeesToIds<ns::Employee_NGSN>, ns::toEmployeesFromIds<ns::Employee_NGSN>),
+  (getIds, setIds, "resources", JSONCONS_RDWR, jsoncons::always_true(), 
+   ns::toEmployeesFromIds<ns::Employee_NGSN>, ns::fromEmployeesToIds<ns::Employee_NGSN>),
   (getRating, setRating, "rating")
 )
 
@@ -1038,7 +1031,8 @@ JSONCONS_ALL_GETTER_SETTER_NAME_TRAITS(ns::Employee_AGSN,
 
 JSONCONS_ALL_GETTER_SETTER_NAME_TRAITS(ns::Company_AGSN,
     (getName, setName, "company"),
-    (getIds, setIds, "resources", JSONCONS_RDWR, jsoncons::always_true(), ns::fromEmployeesToIds<ns::Employee_AGSN>, ns::toEmployeesFromIds<ns::Employee_AGSN>)
+    (getIds, setIds, "resources", JSONCONS_RDWR, jsoncons::always_true(), 
+     ns::toEmployeesFromIds<ns::Employee_AGSN>, ns::fromEmployeesToIds<ns::Employee_AGSN>)
 )
 
 JSONCONS_N_CTOR_GETTER_NAME_TRAITS(ns::Employee_NCGN, 2,
@@ -1048,7 +1042,8 @@ JSONCONS_N_CTOR_GETTER_NAME_TRAITS(ns::Employee_NCGN, 2,
 
 JSONCONS_N_CTOR_GETTER_NAME_TRAITS(ns::Company_NCGN, 2,
   (getName, "company"),
-  (getIds, "resources", JSONCONS_RDWR, jsoncons::always_true(), ns::fromEmployeesToIds<ns::Employee_NCGN>, ns::toEmployeesFromIds<ns::Employee_NCGN>),
+  (getIds, "resources", JSONCONS_RDWR, jsoncons::always_true(), 
+   ns::toEmployeesFromIds<ns::Employee_NCGN>, ns::fromEmployeesToIds<ns::Employee_NCGN>),
   (getRating, "rating")
 )
 
@@ -1059,13 +1054,15 @@ JSONCONS_ALL_CTOR_GETTER_NAME_TRAITS(ns::Employee_ACGN,
 
 JSONCONS_ALL_CTOR_GETTER_NAME_TRAITS(ns::Company_ACGN,
     (getName, "company"),
-    (getIds, "resources", JSONCONS_RDWR, jsoncons::always_true{}, ns::fromEmployeesToIds<ns::Employee_ACGN>, ns::toEmployeesFromIds<ns::Employee_ACGN>)
+    (getIds, "resources", JSONCONS_RDWR, jsoncons::always_true{}, 
+     ns::toEmployeesFromIds<ns::Employee_ACGN>, ns::fromEmployeesToIds<ns::Employee_ACGN>)
 )
 
 JSONCONS_N_CTOR_GETTER_NAME_TRAITS(ns::Person_NCGN, 2,
     (getName, "name"),
     (getSocialSecurityNumber, "social_security_number", 
       JSONCONS_RDWR, jsoncons::always_true{},
+      jsoncons::identity(),
       [] (const jsoncons::optional<std::string>& unvalidated) {
           if (!unvalidated)
           {
@@ -1093,6 +1090,7 @@ JSONCONS_ALL_CTOR_GETTER_NAME_TRAITS(ns::Person_ACGN,
           std::regex myRegex("^(\\d{9})$");
           return std::regex_match(*unvalidated, myRegex);
       },
+      jsoncons::identity(),
       [] (const jsoncons::optional<std::string>& unvalidated) {
           if (!unvalidated)
           {
