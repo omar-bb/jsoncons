@@ -294,6 +294,7 @@ namespace jsoncons \
         template <class Json> \
         static value_type as(const Json& ajson) \
         { \
+            using char_type = typename Json::char_type; \
             if (!is(ajson)) JSONCONS_THROW(convert_error(convert_errc::conversion_failed, "Not a " # ValueType)); \
             using string_view_type = typename Json::string_view_type; \
             value_type aval{}; \
