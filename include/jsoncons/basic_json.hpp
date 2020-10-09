@@ -1241,7 +1241,7 @@ private:
         }
 
         template<class T>
-        typename std::enable_if<is_json_type_traits_specialized<basic_json,T>::value,T>::type
+        typename std::enable_if<json_traits<T>::template is_compatible<basic_json>(),T>::type
         as() const
         {
             return evaluate().template as<T>();
@@ -3975,7 +3975,7 @@ public:
     }
 
     template<class T>
-    typename std::enable_if<is_json_type_traits_specialized<basic_json,T>::value,T>::type
+    typename std::enable_if<json_traits<T>::template is_compatible<basic_json>(),T>::type
     as() const
     {
         T val = json_traits<T>::as(*this);

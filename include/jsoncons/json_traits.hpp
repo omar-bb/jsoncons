@@ -17,7 +17,7 @@ namespace jsoncons {
         template <class Json>
         static constexpr bool is_compatible()
         {
-            return !jsoncons::detail::legacy_is_json_type_traits_unspecialized<Json,T>::value;
+            return jsoncons::is_json_type_traits_specialized<Json,T>::value;
         }
 
         template <class Json>

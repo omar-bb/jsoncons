@@ -286,7 +286,6 @@ namespace jsoncons \
         static bool is(const Json& ajson) noexcept \
         { \
             using char_type = typename Json::char_type; \
-            using string_view_type = typename Json::string_view_type; \
             if (!ajson.is_object()) return false; \
             JSONCONS_VARIADIC_REP_N(JSONCONS_N_MEMBER_IS, ,,, __VA_ARGS__)\
             return true; \
@@ -296,7 +295,6 @@ namespace jsoncons \
         { \
             using char_type = typename Json::char_type; \
             if (!is(ajson)) JSONCONS_THROW(convert_error(convert_errc::conversion_failed, "Not a " # ValueType)); \
-            using string_view_type = typename Json::string_view_type; \
             value_type aval{}; \
             JSONCONS_VARIADIC_REP_N(AsT, ,,, __VA_ARGS__) \
             return aval; \
@@ -305,7 +303,6 @@ namespace jsoncons \
         static Json to_json(const value_type& aval, const Allocator& alloc=Allocator()) \
         { \
             using char_type = typename Json::char_type; \
-            using string_view_type = typename Json::string_view_type; \
             Json ajson(json_object_arg, semantic_tag::none, alloc); \
             JSONCONS_VARIADIC_REP_N(ToJ, ,,, __VA_ARGS__) \
             return ajson; \
