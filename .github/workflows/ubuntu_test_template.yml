@@ -1,6 +1,6 @@
 name: CMake
 
-on: [push]
+on: [push, pull_request]
 
 env:
   BUILD_TYPE: Release
@@ -12,24 +12,19 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: Create Build Environment
-      run: mkdir -p ${{runner.workspace}}/build
+    - name: Create Build Directory
+      run: mkdir ./build
 
     - name: Configure CMake
-      shell: bash
-      working-directory: ${{runner.workspace}}
       run: |
-        echo $GITHUB_WORKSPACE
         cmake $GITHUB_WORKSPACE -DBUILD_TESTS=ON
 
     - name: Build
-      working-directory: ${{runner.workspace}}/build
-      shell: bash
+      working-directory: ./build
       run: |
-        echo $GITHUB_WORKSPACE
-        cmake --build $GITHUB_WORKSPACE --target test_jsoncons --config $BUILD_TYPE
+        cmake --build . --target test_jsoncons --config $BUILD_TYPE
 
     - name: Test
-      working-directory: ${{runner.workspace}}/build/tests/Release
-      shell: bash
-      run: ./test_jsoncons
+      working-directory: ./build/tests/Release
+      run: |
+        ./test_jsoncons
