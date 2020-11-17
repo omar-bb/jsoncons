@@ -2,23 +2,21 @@ name: Ubuntu
 
 on: [push, pull_request]
 
-env:
-  BUILD_TYPE: Release
-
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout
+    - name: Checkout repository
       uses: actions/checkout@v2
 
     - name: Configure CMake
       run: |
-        mkdir -p build
-        cd build
-        cmake ../ -DBUILD_TESTS=ON
-        cmake --build . --target test_jsoncons --config Release
+        cmake . -DBUILD_TESTS=ON
+
+    - name: Compile
+      run: |
+        make -j2 test_jsoncons
 
     - name: Run unit tests
-      run: ../build/tests/Release/test_jsoncons
+      run: ./tests/test_jsoncons
