@@ -26,6 +26,8 @@ jobs:
       shell: powershell
 
     - name: Run unit tests
-      working-directory: tests
-      run: .\Release\test_jsoncons
+      run: |
+        cd tests
+        cd Release
+        .\test_jsoncons
       shell: powershell
