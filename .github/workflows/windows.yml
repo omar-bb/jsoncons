@@ -17,7 +17,7 @@ jobs:
         cmakeBuildType: 'Release'
         cmakeListsOrSettingsJson: CMakeListsTxtAdvanced
         cmakeListsTxtPath: '${{ github.workspace }}/CMakeLists.txt'
-        buildDirectory: '${{ github.workspace }}/build'
+        buildDirectory: '${{ github.workspace }}'
         cmakeAppendedArgs: ' -DBUILD_TESTS=on'
         buildWithCMake: true
         buildWithCMakeArgs: '--config Release'
