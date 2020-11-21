@@ -12,11 +12,13 @@ jobs:
 
     - name: Configure CMake
       run: |
-        cmake . -DBUILD_TESTS=ON
+        cmake . -DBUILD_TESTS=on
 
     - name: Compile
       run: |
         make -j2 test_jsoncons
 
     - name: Run unit tests
-      run: ./tests/test_jsoncons
+      run: |
+        cd tests
+        ./test_jsoncons
