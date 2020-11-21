@@ -10,6 +10,9 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v2
 
+    - name: Add msbuild to PATH
+      uses: microsoft/setup-msbuild@v1.0.2
+
     - name: Configure CMake
       run: cmake -G "Visual Studio 15 2017" -A x64 -D BUILD_TESTS=1 .
       # uses: lukka/run-cmake@v3
