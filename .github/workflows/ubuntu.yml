@@ -11,14 +11,11 @@ jobs:
       uses: actions/checkout@v2
 
     - name: Configure CMake
-      run: |
-        cmake . -DBUILD_TESTS=on
+      run: cmake . -DBUILD_TESTS=on
 
-    - name: Compile
-      run: |
-        make -j2 test_jsoncons
+    - name: Build
+      run: make -j2 test_jsoncons
 
     - name: Run unit tests
-      run: |
-        cd tests
-        ./test_jsoncons
+      working-directory: tests
+      run: ./test_jsoncons
