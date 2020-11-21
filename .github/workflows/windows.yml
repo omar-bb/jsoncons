@@ -19,10 +19,13 @@ jobs:
       #   cmakeListsOrSettingsJson: CMakeListsTxtAdvanced
       #   cmakeListsTxtPath: '${{ github.workspace }}/CMakeLists.txt'
       #   cmakeAppendedArgs: '-DBUILD_TESTS=on'
+      shell: powershell
 
     - name: Build
       run: cmake --build . --target test_jsoncons --config Release
+      shell: powershell
 
     - name: Run unit tests
       working-directory: tests
       run: .\Release\test_jsoncons
+      shell: powershell
