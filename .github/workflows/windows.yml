@@ -4,30 +4,25 @@ on: [push, pull_request]
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2019
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v2
 
-    - name: Get latest CMake and ninja
-      uses: lukka/get-cmake@latest
-
     - name: Configure CMake
       uses: lukka/run-cmake@v3
       with:
-        cmakeGenerator: 'Ninja'
-        buildDirectory: '${{ github.workspace }}'
         cmakeListsOrSettingsJson: CMakeListsTxtAdvanced
         cmakeListsTxtPath: '${{ github.workspace }}/CMakeLists.txt'
+        buildDirectory: '${{ github.workspace }}'
+        cmakeGenerator: 'Ninja'
         cmakeAppendedArgs: '-DBUILD_TESTS=on'
 
     - name: Build
       run: cmake --build . --target test_jsoncons --config Release
-      shell: cmd
 
     - name: Run unit tests
       working-directory: tests/
       run: |
         .\Release\test_jsoncons
-      shell: cmd
