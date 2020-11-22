@@ -5,6 +5,9 @@ on: [push, pull_request]
 jobs:
   build:
     runs-on: windows-2019
+    strategy:
+      matrix:
+        cmake-generators: ['VS16Win64', 'VS15Win64']
 
     steps:
     - name: Checkout repository
@@ -16,7 +19,7 @@ jobs:
         cmakeListsOrSettingsJson: CMakeListsTxtAdvanced
         cmakeListsTxtPath: '${{ github.workspace }}/CMakeLists.txt'
         buildDirectory: '${{ github.workspace }}'
-        cmakeGenerator: 'Ninja'
+        cmakeGenerator: '${{ matrix.cmake-generators }}'
         cmakeAppendedArgs: '-DBUILD_TESTS=on'
 
     - name: Build
