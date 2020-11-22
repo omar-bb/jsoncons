@@ -1,0 +1,21 @@
+name: MacOS
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Configure CMake
+      run: cmake . -DBUILD_TESTS=on
+
+    - name: Build
+      run: make -j2 test_jsoncons
+
+    - name: Run unit tests
+      working-directory: tests
+      run: ./test_jsoncons
