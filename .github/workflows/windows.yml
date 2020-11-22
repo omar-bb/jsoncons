@@ -15,14 +15,13 @@ jobs:
       uses: lukka/get-cmake@latest
 
     - name: Configure CMake
-      run: cmake -G Ninja -D BUILD_TESTS=1 .
-      # uses: lukka/run-cmake@v3
-      # with:
-      #   cmakeGenerator: 'VS16Win64'
-      #   buildDirectory: '${{ github.workspace }}'
-      #   cmakeListsOrSettingsJson: CMakeListsTxtAdvanced
-      #   cmakeListsTxtPath: '${{ github.workspace }}/CMakeLists.txt'
-      #   cmakeAppendedArgs: '-DBUILD_TESTS=on'
+      uses: lukka/run-cmake@latest
+      with:
+        cmakeGenerator: 'Ninja'
+        buildDirectory: '${{ github.workspace }}'
+        cmakeListsOrSettingsJson: CMakeListsTxtAdvanced
+        cmakeListsTxtPath: '${{ github.workspace }}/CMakeLists.txt'
+        cmakeAppendedArgs: '-DBUILD_TESTS=on'
       shell: cmd
 
     - name: Build
